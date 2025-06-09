@@ -3,9 +3,9 @@ const {
   DisconnectReason,
   fetchLatestBaileysVersion,
   useMultiFileAuthState,
-  makeCacheableSignalKeyStore
+  makeCacheableSignalKeyStore,
+  delay
 } = require('@whiskeysockets/baileys');
-
 const { Boom } = require('@hapi/boom');
 const fs = require('fs');
 const path = require('path');
@@ -13,10 +13,13 @@ const pino = require('pino');
 const http = require('http');
 const config = require('./config');
 
-const authFolder = path.join(__dirname, 'auth');
-const pluginsDir = path.join(__dirname, 'The100Md_plugins');
+// Global command map
+global.commands = new Map();
 
-// ✅ Decode session if provided
+// Auth folder
+const authFolder = path.join(__dirname, 'auth');
+
+// ✅ Write session if provided
 if (config.SESSION_ID) {
   try {
     const sessionData = config.SESSION_ID.replace(/^ALONE-MD;;;=>/, '');
@@ -30,31 +33,7 @@ if (config.SESSION_ID) {
   }
 }
 
-// ✅ Load plugins
-const plugins = [];
-
-if (fs.existsSync(pluginsDir)) {
-  const pluginFiles = fs.readdirSync(pluginsDir).filter(f => f.endsWith('.js'));
-
-  for (const file of pluginFiles) {
-    const pluginPath = path.join(pluginsDir, file);
-    try {
-      const plugin = require(pluginPath);
-      if (typeof plugin === 'function') {
-        plugins.push({ run: plugin, name: file });
-        console.log(`✅ Plugin loaded: ${file}`);
-      } else {
-        console.warn(`⚠️ Skipped ${file}: Export is not a function`);
-      }
-    } catch (err) {
-      console.error(`❌ Failed to load plugin ${file}:`, err);
-    }
-  }
-} else {
-  console.warn(`⚠️ Plugin folder not found: ${pluginsDir}`);
-}
-
-// ✅ Start the bot
+// ✅ Start bot
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestBaileysVersion();
@@ -72,18 +51,31 @@ async function startBot() {
 
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
     if (connection === 'close') {
       const reason = lastDisconnect?.error instanceof Boom ? lastDisconnect.error : new Boom(lastDisconnect?.error);
       const shouldReconnect = reason.output?.statusCode !== DisconnectReason.loggedOut;
       console.log('🔌 Disconnected.', shouldReconnect ? 'Reconnecting...' : 'Logged out.');
       if (shouldReconnect) startBot();
     } else if (connection === 'open') {
-      console.log(`🤖 Bot connected as ${config.BOT_NAME}`);
+      console.log(`✅ ${config.BOT_NAME} connected successfully!`);
+      console.log('🔄 Loading commands...\n');
+
+      const pluginDir = path.join(__dirname, 'The100Md_plugins');
+      fs.readdirSync(pluginDir).forEach((file) => {
+        if (file.endsWith('.js')) {
+          try {
+            require(path.join(pluginDir, file));
+            console.log(`✅ Loaded: ${file}`);
+          } catch (e) {
+            console.log(`❌ Failed to load ${file}:`, e.message);
+          }
+        }
+      });
     }
   });
 
-  // ✅ Message event
+  // ✅ Handle messages
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
     if (!msg?.message || msg.key.fromMe) return;
@@ -119,15 +111,15 @@ async function startBot() {
       }
     }
 
-    // ✅ Command parsing
+    // ✅ Command handling
     if (!body.startsWith(config.PREFIX)) return;
 
     const command = body.slice(config.PREFIX.length).trim().split(/\s+/)[0].toLowerCase();
     const args = body.slice(config.PREFIX.length + command.length).trim();
 
-    for (const { run, name } of plugins) {
+    if (global.commands.has(command)) {
       try {
-        await run({
+        await global.commands.get(command)({
           sock,
           msg,
           from,
@@ -137,20 +129,22 @@ async function startBot() {
           PREFIX: config.PREFIX,
           OWNER_NUMBER: config.OWNER_NUMBER
         });
-        console.log(`📦 Plugin executed: ${name} -> ${command}`);
+        console.log(`✅ Executed command: ${command}`);
       } catch (err) {
-        console.error(`❌ Error in plugin ${name}:`, err);
+        console.error(`❌ Error in command '${command}':`, err);
       }
+    } else {
+      console.log(`❓ Unknown command: ${command}`);
     }
   });
 }
 
 startBot();
 
-// ✅ Keep-alive server for Render
+// ✅ Keep-alive HTTP server for platforms like Render
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('🤖 WhatsApp bot is running.\n');
 }).listen(process.env.PORT || 3000, () => {
-  console.log('🌐 HTTP server listening to keep Render alive');
+  console.log('🌐 HTTP server listening on port 3000');
 });
