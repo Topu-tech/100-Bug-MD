@@ -2,9 +2,9 @@ const {
   default: makeWASocket,
   DisconnectReason,
   fetchLatestBaileysVersion,
-  makeInMemoryStore,
-  useSingleFileAuthState
+  makeInMemoryStore
 } = require('@whiskeysockets/baileys');
+const { useSingleFileAuthState } = require('@whiskeysockets/baileys/auth');
 
 const { Boom } = require('@hapi/boom');
 const fs = require('fs');
@@ -12,9 +12,10 @@ const path = require('path');
 const pino = require('pino');
 const config = require('./config');
 
-// === Auth Path & Session Decoding ===
+// Path to creds
 const authFile = path.join(__dirname, 'auth', 'creds.json');
 
+// Ensure session from SESSION_ID
 if (!fs.existsSync(authFile) && config.SESSION_ID) {
   try {
     const base64 = config.SESSION_ID.replace(/^ALONE-MD;;;=>/, '');
@@ -29,7 +30,6 @@ if (!fs.existsSync(authFile) && config.SESSION_ID) {
 
 const { state, saveState } = useSingleFileAuthState(authFile);
 
-// === Plugin Loader ===
 const plugins = [];
 const pluginsDir = path.join(__dirname, 'The100Md_plugins');
 if (fs.existsSync(pluginsDir)) {
@@ -39,13 +39,12 @@ if (fs.existsSync(pluginsDir)) {
         const plugin = require(path.join(pluginsDir, file));
         if (typeof plugin === 'function') plugins.push(plugin);
       } catch (e) {
-        console.error(`⚠️ Failed to load plugin ${file}:`, e);
+        console.error(`⚠️ Plugin ${file} failed:`, e);
       }
     }
   });
 }
 
-// === Bot Start ===
 async function startBot() {
   const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({
@@ -62,31 +61,18 @@ async function startBot() {
     if (connection === 'close') {
       const err = lastDisconnect?.error instanceof Boom ? lastDisconnect.error : new Boom(lastDisconnect?.error);
       const shouldReconnect = err.output?.statusCode !== DisconnectReason.loggedOut;
-      console.log('🔌 Disconnected. Reconnecting in 5s?', shouldReconnect);
-      if (shouldReconnect) {
-        setTimeout(() => startBot(), 5000);
-      }
+      console.log('🔌 Disconnected. Reconnecting...', shouldReconnect);
+      if (shouldReconnect) startBot();
     } else if (connection === 'open') {
       console.log(`🤖 Bot connected as ${config.BOT_NAME}`);
     }
   });
 
-  // === Message Handler ===
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
     if (!msg?.message || msg.key.fromMe) return;
 
     const from = msg.key.remoteJid;
-
-    // ✅ Auto-read all messages
-    if (config.AUTO_READ_MESSAGES !== false) {
-      try {
-        await sock.readMessages([msg.key]);
-        console.log('📖 Auto-read message from', msg.pushName || from);
-      } catch (err) {
-        console.error('❌ Auto-read failed:', err);
-      }
-    }
 
     // ✅ Auto-view status
     if (config.AUTO_STATUS_VIEW && from === 'status@broadcast') {
@@ -94,9 +80,19 @@ async function startBot() {
         await sock.readMessages([msg.key]);
         console.log('👀 Auto-viewed status from', msg.pushName || msg.key.participant || 'Unknown');
       } catch (e) {
-        console.error('⚠️ Failed to auto-view status:', e);
+        console.error('⚠️ Auto-status-view failed:', e);
       }
       return;
+    }
+
+    // ✅ Auto-read
+    if (config.AUTO_READ_MESSAGES) {
+      try {
+        await sock.readMessages([msg.key]);
+        console.log('📖 Auto-read message from', msg.pushName || from);
+      } catch (e) {
+        console.error('⚠️ Auto-read failed:', e);
+      }
     }
 
     // ✅ Auto-reply
@@ -105,11 +101,11 @@ async function startBot() {
         await sock.sendMessage(from, { text: config.AUTO_REPLY_MSG }, { quoted: msg });
         console.log('💬 Auto-replied to', msg.pushName || from);
       } catch (err) {
-        console.error('⚠️ Auto-reply failed:', err);
+        console.error('⚠️ Auto-reply error:', err);
       }
     }
 
-    // ✅ Handle Commands via Plugins
+    // ✅ Plugin Command Handler
     const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
     if (!body.startsWith(config.PREFIX)) return;
 
@@ -118,16 +114,7 @@ async function startBot() {
 
     for (const plugin of plugins) {
       try {
-        await plugin({
-          sock,
-          msg,
-          from,
-          body,
-          command,
-          args,
-          PREFIX: config.PREFIX,
-          OWNER_NUMBER: config.OWNER_NUMBER
-        });
+        await plugin({ sock, msg, from, body, command, args, PREFIX: config.PREFIX, OWNER_NUMBER: config.OWNER_NUMBER });
       } catch (err) {
         console.error('⚠️ Plugin error:', err);
       }
