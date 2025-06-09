@@ -1,72 +1,117 @@
-const { default: makeWASocket, makeInMemoryStore, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const {
+  default: makeWASocket,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  makeInMemoryStore,
+  useSingleFileAuthState,
+} = require('@whiskeysockets/baileys');
+
 const { Boom } = require('@hapi/boom');
 const fs = require('fs');
 const path = require('path');
 const pino = require('pino');
 const config = require('./config');
 
-// Step 1: Decode base64 session from config
-const sessionRaw = config.SESSION_ID.replace(/ALONE-MD;;;=>/g, '');
-const authPath = path.join(__dirname, 'auth');
+// Auth file path
+const authFile = path.join(__dirname, 'auth', 'creds.json');
 
-// Step 2: Write creds.json if not exist or session is updated
-if (!fs.existsSync(`${authPath}/creds.json`) || sessionRaw !== 'skip') {
-    try {
-        fs.mkdirSync(authPath, { recursive: true });
-        fs.writeFileSync(`${authPath}/creds.json`, Buffer.from(sessionRaw, 'base64').toString('utf-8'), 'utf8');
-        console.log('✅ Session file written successfully.');
-    } catch (e) {
-        console.error('❌ Failed to write session:', e);
-        process.exit(1);
-    }
+// Decode and write base64 session if file doesn’t exist
+if (!fs.existsSync(authFile) && config.SESSION_ID) {
+  try {
+    const base64 = config.SESSION_ID.replace(/^ALONE-MD;;;=>/, '');
+    const decoded = Buffer.from(base64, 'base64').toString('utf8');
+    fs.mkdirSync(path.dirname(authFile), { recursive: true });
+    fs.writeFileSync(authFile, decoded, 'utf8');
+    console.log("✅ Session loaded from SESSION_ID");
+  } catch (err) {
+    console.error("❌ Failed to decode SESSION_ID:", err);
+  }
 }
 
-const store = makeInMemoryStore({ logger: pino().child({ level: 'silent' }) });
+// Load auth state
+const { state, saveState } = useSingleFileAuthState(authFile);
 
+// Load plugins
+const plugins = [];
+const pluginsDir = path.join(__dirname, 'The100Md_plugins');
+if (fs.existsSync(pluginsDir)) {
+  fs.readdirSync(pluginsDir).forEach(file => {
+    if (file.endsWith('.js')) {
+      try {
+        const plugin = require(path.join(pluginsDir, file));
+        if (typeof plugin === 'function') plugins.push(plugin);
+      } catch (e) {
+        console.error(`⚠️ Failed to load plugin ${file}:`, e);
+      }
+    }
+  });
+}
+
+// Start bot
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState(authPath);
-    const { version } = await fetchLatestBaileysVersion();
+  const { version } = await fetchLatestBaileysVersion();
+  const sock = makeWASocket({
+    version,
+    logger: pino({ level: 'silent' }),
+    printQRInTerminal: !config.SESSION_ID, // Show QR if no session
+    auth: state,
+    browser: [config.BOT_NAME, 'Chrome', '1.0.0']
+  });
 
-    const sock = makeWASocket({
-        version,
-        logger: pino({ level: 'silent' }),
-        printQRInTerminal: false,
-        auth: state,
-        browser: [config.BOT_NAME, 'Chrome', '1.0.0']
-    });
+  sock.ev.on('creds.update', saveState);
 
-    store.bind(sock.ev);
+  sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
+    if (connection === 'close') {
+      const err = lastDisconnect?.error instanceof Boom ? lastDisconnect.error : new Boom(lastDisconnect?.error);
+      const shouldReconnect = err.output?.statusCode !== DisconnectReason.loggedOut;
+      console.log('🔌 Disconnected. Reconnecting...', shouldReconnect);
+      if (shouldReconnect) startBot();
+    } else if (connection === 'open') {
+      console.log(`🤖 Bot connected as ${config.BOT_NAME}`);
+    }
+  });
 
-    sock.ev.on('creds.update', saveCreds);
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg?.message || msg.key.fromMe) return;
 
-    sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
-        if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error instanceof Boom)
-                ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
-                : true;
+    const from = msg.key.remoteJid;
 
-            console.log('🔁 Connection closed. Reconnecting?', shouldReconnect);
-            if (shouldReconnect) startBot();
-        } else if (connection === 'open') {
-            console.log(`✅ Bot connected as ${config.BOT_NAME}`);
-        }
-    });
+    // Auto-view statuses
+    if (config.AUTO_STATUS_VIEW && from === 'status@broadcast') {
+      try {
+        await sock.readMessages([msg.key]);
+        console.log('👀 Auto-viewed status from', msg.pushName || msg.key.participant || 'Unknown');
+      } catch (e) {
+        console.error('⚠️ Failed to auto-view status:', e);
+      }
+      return;
+    }
 
-    sock.ev.on('messages.upsert', async ({ messages }) => {
-        const msg = messages[0];
-        if (!msg?.message || msg.key.fromMe) return;
+    // Auto-reply
+    if (config.AUTO_REPLY) {
+      try {
+        await sock.sendMessage(from, { text: config.AUTO_REPLY_MSG }, { quoted: msg });
+        console.log('💬 Auto-replied to', msg.pushName || from);
+      } catch (err) {
+        console.error('⚠️ Auto-reply failed:', err);
+      }
+    }
 
-        const from = msg.key.remoteJid;
+    const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+    if (!body.startsWith(config.PREFIX)) return;
 
-        if (config.AUTO_REPLY) {
-            try {
-                await sock.sendMessage(from, { text: config.AUTO_REPLY_MSG }, { quoted: msg });
-                console.log('💬 Auto-replied to', from);
-            } catch (err) {
-                console.error('⚠️ Auto-reply failed:', err);
-            }
-        }
-    });
+    const command = body.slice(config.PREFIX.length).trim().split(/\s+/)[0].toLowerCase();
+    const args = body.slice(config.PREFIX.length + command.length).trim();
+
+    for (const plugin of plugins) {
+      try {
+        await plugin({ sock, msg, from, body, command, args, PREFIX: config.PREFIX, OWNER_NUMBER: config.OWNER_NUMBER });
+      } catch (err) {
+        console.error('⚠️ Plugin error:', err);
+      }
+    }
+  });
 }
 
 startBot();
