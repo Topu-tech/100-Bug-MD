@@ -32,7 +32,7 @@ module.exports = {
   ANTICALL_MSG: process.env.ANTICALL_MSG || '📵 Please don’t call the bot!',
 
   // Presence Control (New)
-  PRESENCE: process.env.PRESENCE || '',
+  PRESENCE: process.env.PRESENCE || 'composing',
 
   // Admin Tools
   WARN_COUNT: parseInt(process.env.WARN_COUNT || '3'),
