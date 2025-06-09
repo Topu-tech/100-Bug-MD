@@ -93,18 +93,13 @@ async function startBot() {
     const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
     console.log(`📥 Message from ${from}:`, body);
 
-    // === PRESENCE HANDLING ===
-    const presence = config.PRESENCE?.toLowerCase();
+    // === ALWAYS SEND PRESENCE ===
     try {
-      if (presence === 'available') {
-        await sock.sendPresenceUpdate('available', from);
-      } else if (['composing', 'typing'].includes(presence)) {
-        await sock.sendPresenceUpdate('composing', from);
-      } else if (presence === 'recording') {
-        await sock.sendPresenceUpdate('recording', from);
-      } else {
-        await sock.sendPresenceUpdate('unavailable', from);
-      }
+      const presence = (config.PRESENCE || 'composing').toLowerCase();
+      const validPresence = ['available', 'composing', 'typing', 'recording'];
+      const presenceMode = validPresence.includes(presence) ? presence : 'composing';
+
+      await sock.sendPresenceUpdate(presenceMode, from);
     } catch (e) {
       console.error('⚠️ Presence update failed:', e);
     }
