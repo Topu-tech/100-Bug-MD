@@ -7,9 +7,9 @@ module.exports = {
   SESSION_ID: process.env.SESSION_ID || '',
 
   // Bot Identity
-  BOT_NAME: process.env.BOT_NAME || 'The100-MD',
+  BOT_NAME: process.env.BOT_NAME || 'The100Bug-MD',
   OWNER_NAME: process.env.OWNER_NAME || 'User',
-  OWNER_NUMBER: process.env.NUMERO_OWNER || '255673750170',
+  OWNER_NUMBER: process.env.OWNER_NUMBER || '255673750170',
 
   // Behavior Toggles
   PREFIX: process.env.PREFIX || '.',
