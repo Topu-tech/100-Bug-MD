@@ -41,17 +41,18 @@
       "value": "",
       "required": true
     },
+      "PRECENCE": {
+      "description": "Choose your bot's prefix",
+      "value": "available",
+      "required": true
+    },
     "NUMERO_OWNER": {
       "description": "Owner phone number (without '+' sign, e.g., 255673750170)",
       "value": "255673750170",
       "required": false
     }
   },
-  "PRECENCE": {
-      "description": "Choose your bot's prefix",
-      "value": "available",
-      "required": true
-    },
+
   "formation": {
     "worker": {
       "quantity": 1,
