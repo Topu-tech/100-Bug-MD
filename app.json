@@ -16,6 +16,11 @@
       "value": ".",
       "required": true
     },
+        "PUBLIC_MODE": {
+      "description": "Set 'yes'or 'true' to make your bot public or 'no' or 'false' to keep it private",
+      "value": "true",
+      "required": false
+    },
     "AUTO_STATUS_VIEW": {
       "description": "Auto view WhatsApp status (true/false)",
       "value": "true",
@@ -41,12 +46,12 @@
       "value": "",
       "required": true
     },
-      "PRECENCE": {
-      "description": "Choose your bot's prefix",
-      "value": "available",
+      "PRESENCE": {
+      "description": "Choose your bot's presence",
+      "value": "recording",
       "required": true
     },
-    "NUMERO_OWNER": {
+    "OWNER_NUMBER": {
       "description": "Owner phone number (without '+' sign, e.g., 255673750170)",
       "value": "255673750170",
       "required": false
