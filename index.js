@@ -98,7 +98,7 @@ async function startBot() {
     try {
       if (presence === 'available') {
         await sock.sendPresenceUpdate('available', from);
-      } else if (presence === 'composing' || presence === 'typing') {
+      } else if (['composing', 'typing'].includes(presence)) {
         await sock.sendPresenceUpdate('composing', from);
       } else if (presence === 'recording') {
         await sock.sendPresenceUpdate('recording', from);
@@ -131,7 +131,10 @@ async function startBot() {
     }
 
     // Command handling
-    if (!body.startsWith(config.PREFIX)) return;
+    if (!body.startsWith(config.PREFIX)) {
+      if (!config.PUBLIC_MODE && from.endsWith('@g.us')) return;
+      return;
+    }
 
     const command = body.slice(config.PREFIX.length).trim().split(/\s+/)[0].toLowerCase();
     const args = body.slice(config.PREFIX.length + command.length).trim();
