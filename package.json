@@ -1,1 +1,27 @@
-/
+{
+  "name": "alone-md",
+  "version": "1.0.0",
+  "description": "Alone-MD is a powerful multi-device WhatsApp bot built using Baileys.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "baileys",
+    "alone-md",
+    "toputech"
+  ],
+  "author": "Toputech",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.x"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.1",
+    "@hapi/boom": "^10.0.1",
+    "dotenv": "^16.3.1",
+    "pino": "^8.19.0"
+  }
+}
