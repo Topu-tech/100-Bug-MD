@@ -47,6 +47,11 @@
       "required": false
     }
   },
+  "PRECENCE": {
+      "description": "Choose your bot's prefix",
+      "value": "available",
+      "required": true
+    },
   "formation": {
     "worker": {
       "quantity": 1,
