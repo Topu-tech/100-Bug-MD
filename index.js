@@ -1,8 +1,9 @@
 const {
   default: makeWASocket,
   useSingleFileAuthState,
-  DisconnectReason,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore,
+  DisconnectReason
 } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const fs = require('fs');
@@ -11,10 +12,31 @@ const P = require('pino');
 
 const config = require('./config');
 
-const authFile = path.join(__dirname, 'auth_info.json'); // or '/tmp/auth_info.json' if needed
+const authFile = path.join(__dirname, 'auth_info.json');
 
-const { state, saveState } = useSingleFileAuthState(authFile);
+// 🔁 Load from SESSION_ID or fallback to file
+let state, saveState;
+if (config.SESSION_ID && config.SESSION_ID.startsWith('ey')) {
+  try {
+    const sessionJson = JSON.parse(Buffer.from(config.SESSION_ID, 'base64').toString('utf-8'));
+    state = {
+      creds: sessionJson.creds,
+      keys: makeCacheableSignalKeyStore(sessionJson.keys, P({ level: 'silent' }))
+    };
+    saveState = () => {}; // no-op
+    console.log('🔐 Using session from SESSION_ID');
+  } catch (err) {
+    console.error('❌ Failed to parse SESSION_ID:', err);
+    process.exit(1);
+  }
+} else {
+  const fileAuth = useSingleFileAuthState(authFile);
+  state = fileAuth.state;
+  saveState = fileAuth.saveState;
+  console.log('📁 Using auth_info.json for session');
+}
 
+// 🔌 Load plugins
 const plugins = [];
 const pluginsDir = path.join(__dirname, 'The100Md_plugins');
 if (fs.existsSync(pluginsDir)) {
@@ -29,7 +51,7 @@ if (fs.existsSync(pluginsDir)) {
     }
   });
 } else {
-  console.warn('Plugins directory not found:', pluginsDir);
+  console.warn('⚠️ Plugins directory not found:', pluginsDir);
 }
 
 async function startBot() {
@@ -38,7 +60,7 @@ async function startBot() {
   const sock = makeWASocket({
     version,
     logger: P({ level: 'silent' }),
-    printQRInTerminal: true,
+    printQRInTerminal: !config.SESSION_ID, // only show QR if no session
     auth: state,
     browser: [config.BOT_NAME, 'Chrome', '1.0.0']
   });
