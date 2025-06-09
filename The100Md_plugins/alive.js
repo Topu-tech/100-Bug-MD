@@ -1,3 +1,5 @@
+const axios = require('axios');
+
 module.exports = async ({ sock, msg, from, command, config }) => {
   const audioSources = [
     "https://files.catbox.moe/ofpmo1.mp3",
@@ -13,42 +15,37 @@ module.exports = async ({ sock, msg, from, command, config }) => {
       const isAudio = randomUrl.endsWith('.mp3');
       const isVideo = randomUrl.endsWith('.mp4');
 
-      const caption = `✅ *I'm alive and running!*\n\n🎧 Playing random media\n🤖 Bot: ${config.BOT_NAME}\n👤 Owner: ${config.OWNER_NAME}\n🕒 Uptime: ${getUptime()}`;
+      const caption = `✅ *I'm alive and running!*\n\n🎧 Playing random media\n🤖 Bot: ${config.BOT_NAME || 'Bot'}\n👤 Owner: ${config.OWNER_NAME || 'Unknown'}\n🕒 Uptime: ${getUptime()}`;
+
+      // Download thumbnail as buffer
+      const thumb = await getBuffer("https://telegra.ph/file/0a2fae9f74579c6c93a37.jpg");
+
+      const contextInfo = {
+        externalAdReply: {
+          title: config.BOT_NAME || "Bot",
+          body: "Alive Check ✔️",
+          mediaUrl: randomUrl,
+          mediaType: 2,
+          thumbnail: thumb,
+          showAdAttribution: true,
+          sourceUrl: randomUrl
+        }
+      };
 
       if (isAudio) {
         await sock.sendMessage(from, {
           audio: { url: randomUrl },
           mimetype: 'audio/mpeg',
           ptt: false,
-          contextInfo: {
-            externalAdReply: {
-              title: config.BOT_NAME,
-              body: "Alive Check ✔️",
-              thumbnailUrl: "https://telegra.ph/file/0a2fae9f74579c6c93a37.jpg",
-              mediaType: 2,
-              mediaUrl: randomUrl,
-              showAdAttribution: true
-            }
-          }
+          contextInfo
         }, { quoted: msg });
-
       } else if (isVideo) {
         await sock.sendMessage(from, {
           video: { url: randomUrl },
           caption,
           mimetype: 'video/mp4',
-          contextInfo: {
-            externalAdReply: {
-              title: config.BOT_NAME,
-              body: "Alive Video ✔️",
-              thumbnailUrl: "https://telegra.ph/file/0a2fae9f74579c6c93a37.jpg",
-              mediaType: 2,
-              mediaUrl: randomUrl,
-              showAdAttribution: true
-            }
-          }
+          contextInfo
         }, { quoted: msg });
-
       } else {
         await sock.sendMessage(from, { text: '❌ Unsupported media format.' }, { quoted: msg });
       }
@@ -67,4 +64,10 @@ function getUptime() {
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
   return `${h}h ${m}m ${s}s`;
+}
+
+// Helper to fetch image buffer
+async function getBuffer(url) {
+  const response = await axios.get(url, { responseType: 'arraybuffer' });
+  return Buffer.from(response.data, 'binary');
 }
