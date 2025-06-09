@@ -31,6 +31,7 @@ if (config.SESSION_ID) {
   }
 }
 
+// Load plugins
 const plugins = [];
 const pluginsDir = path.join(__dirname, 'The100Md_plugins');
 if (fs.existsSync(pluginsDir)) {
@@ -118,3 +119,12 @@ async function startBot() {
 }
 
 startBot();
+
+// ✅ Dummy HTTP server to keep Render alive
+const http = require('http');
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('🤖 WhatsApp bot is running.\n');
+}).listen(process.env.PORT || 3000, () => {
+  console.log('🌐 HTTP server listening to keep Render alive');
+});
