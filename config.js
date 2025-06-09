@@ -30,6 +30,8 @@ module.exports = {
   ANTI_DELETE_MESSAGE: toBool(process.env.ANTI_DELETE_MESSAGE),
   ANTICALL: toBool(process.env.ANTICALL),
   ANTICALL_MSG: process.env.ANTICALL_MSG || '📵 Please don’t call the bot!',
+
+  // Presence Control (New)
   PRESENCE: process.env.PRESENCE || '',
 
   // Admin Tools
