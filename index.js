@@ -9,15 +9,12 @@ const fs = require('fs');
 const path = require('path');
 const P = require('pino');
 
-const config = require('./config'); // <=== import config
+const config = require('./config');
 
-// Write session id to auth file for Baileys
-const authFile = './auth_info.json';
-fs.writeFileSync(authFile, JSON.stringify({ session: config.SESSION_ID }));
+const authFile = path.join(__dirname, 'auth_info.json'); // or '/tmp/auth_info.json' if needed
 
 const { state, saveState } = useSingleFileAuthState(authFile);
 
-// Load plugins dynamically from plugins folder
 const plugins = [];
 const pluginsDir = path.join(__dirname, 'The100Md_plugins');
 if (fs.existsSync(pluginsDir)) {
@@ -50,7 +47,8 @@ async function startBot() {
 
   sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
     if (connection === 'close') {
-      const shouldReconnect = (lastDisconnect?.error = new Boom(lastDisconnect?.error))?.output?.statusCode !== DisconnectReason.loggedOut;
+      const err = lastDisconnect?.error instanceof Boom ? lastDisconnect.error : new Boom(lastDisconnect?.error);
+      const shouldReconnect = err.output?.statusCode !== DisconnectReason.loggedOut;
       console.log('❌ Disconnected. Reconnecting...', shouldReconnect);
       if (shouldReconnect) startBot();
     } else if (connection === 'open') {
@@ -64,7 +62,6 @@ async function startBot() {
 
     const from = msg.key.remoteJid;
 
-    // Auto view statuses if enabled and message is from status broadcast
     if (config.AUTO_STATUS_VIEW && from === 'status@broadcast') {
       try {
         await sock.readMessages([msg.key]);
@@ -72,10 +69,9 @@ async function startBot() {
       } catch (e) {
         console.error('⚠️ Failed to auto-view status:', e);
       }
-      return; // no need to process further for status messages
+      return;
     }
 
-    // Auto reply if enabled
     if (config.AUTO_REPLY) {
       try {
         await sock.sendMessage(from, { text: config.AUTO_REPLY_MSG }, { quoted: msg });
@@ -85,7 +81,6 @@ async function startBot() {
       }
     }
 
-    // Command handling
     const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
     if (!body.startsWith(config.PREFIX)) return;
 
