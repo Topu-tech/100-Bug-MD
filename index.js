@@ -151,6 +151,6 @@ startBot();
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('🤖 WhatsApp bot is running.\n');
-}).listen(process.env.PORT || 3000, () => {
+}).listen(process.env.PORT || 10000, () => {
   console.log('🌐 HTTP server listening to keep Render alive');
 });
