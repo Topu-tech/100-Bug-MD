@@ -2,10 +2,9 @@ const {
   default: makeWASocket,
   DisconnectReason,
   fetchLatestBaileysVersion,
-  makeInMemoryStore,
-  useMultiFileAuthState,
-  makeCacheableSignalKeyStore
+  makeInMemoryStore
 } = require('@whiskeysockets/baileys');
+const { useSingleFileAuthState } = require('@whiskeysockets/baileys/auth');
 
 const { Boom } = require('@hapi/boom');
 const fs = require('fs');
@@ -13,24 +12,24 @@ const path = require('path');
 const pino = require('pino');
 const config = require('./config');
 
-// Auth folder
-const authFolder = path.join(__dirname, 'auth');
+const authFile = path.join(__dirname, 'auth', 'creds.json');
 
-// Write base64 session if not already written
-if (config.SESSION_ID) {
+// Load session from SESSION_ID if needed
+if (!fs.existsSync(authFile) && config.SESSION_ID) {
   try {
-    const sessionData = config.SESSION_ID.replace(/^ALONE-MD;;;=>/, '');
-    const decoded = Buffer.from(sessionData, 'base64').toString('utf-8');
-
-    fs.mkdirSync(authFolder, { recursive: true });
-    fs.writeFileSync(path.join(authFolder, 'creds.json'), decoded, 'utf-8');
-    console.log('✅ Session decoded and written.');
+    const base64 = config.SESSION_ID.replace(/^ALONE-MD;;;=>/, '');
+    const decoded = Buffer.from(base64, 'base64').toString('utf8');
+    fs.mkdirSync(path.dirname(authFile), { recursive: true });
+    fs.writeFileSync(authFile, decoded, 'utf8');
+    console.log("✅ Session loaded from SESSION_ID");
   } catch (err) {
-    console.error('❌ Failed to decode SESSION_ID:', err);
-    process.exit(1);
+    console.error("❌ Failed to decode SESSION_ID:", err);
   }
 }
 
+const { state, saveState } = useSingleFileAuthState(authFile);
+
+// Load plugins if needed
 const plugins = [];
 const pluginsDir = path.join(__dirname, 'The100Md_plugins');
 if (fs.existsSync(pluginsDir)) {
@@ -40,34 +39,29 @@ if (fs.existsSync(pluginsDir)) {
         const plugin = require(path.join(pluginsDir, file));
         if (typeof plugin === 'function') plugins.push(plugin);
       } catch (e) {
-        console.error(`⚠️ Plugin ${file} failed to load:`, e);
+        console.error(`⚠️ Failed to load plugin ${file}:`, e);
       }
     }
   });
 }
 
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestBaileysVersion();
-
   const sock = makeWASocket({
     version,
     logger: pino({ level: 'silent' }),
     printQRInTerminal: !config.SESSION_ID,
-    auth: {
-      creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
-    },
+    auth: state,
     browser: [config.BOT_NAME, 'Chrome', '1.0.0']
   });
 
-  sock.ev.on('creds.update', saveCreds);
+  sock.ev.on('creds.update', saveState);
 
   sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
     if (connection === 'close') {
-      const reason = lastDisconnect?.error instanceof Boom ? lastDisconnect.error : new Boom(lastDisconnect?.error);
-      const shouldReconnect = reason.output?.statusCode !== DisconnectReason.loggedOut;
-      console.log('🔌 Disconnected.', shouldReconnect ? 'Reconnecting...' : 'Logged out.');
+      const err = lastDisconnect?.error instanceof Boom ? lastDisconnect.error : new Boom(lastDisconnect?.error);
+      const shouldReconnect = err.output?.statusCode !== DisconnectReason.loggedOut;
+      console.log('🔌 Disconnected. Reconnecting...', shouldReconnect);
       if (shouldReconnect) startBot();
     } else if (connection === 'open') {
       console.log(`🤖 Bot connected as ${config.BOT_NAME}`);
@@ -80,18 +74,16 @@ async function startBot() {
 
     const from = msg.key.remoteJid;
 
-    // Auto-view status
     if (config.AUTO_STATUS_VIEW && from === 'status@broadcast') {
       try {
         await sock.readMessages([msg.key]);
         console.log('👀 Auto-viewed status from', msg.pushName || msg.key.participant || 'Unknown');
       } catch (e) {
-        console.error('⚠️ Failed to auto-view status:', e);
+        console.error('⚠️ Auto-status-view failed:', e);
       }
       return;
     }
 
-    // Auto-reply
     if (config.AUTO_REPLY) {
       try {
         await sock.sendMessage(from, { text: config.AUTO_REPLY_MSG }, { quoted: msg });
