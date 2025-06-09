@@ -1,1 +1,56 @@
-
+{
+  "name": "The100-MD",
+  "description": "The100-MD is a multidevice WhatsApp bot built to make your WhatsApp enjoyable.",
+  "repository": "https://github.com/Toputech/ALONE-MD-V1",
+  "logo": "https://i.imgur.com/jE8eQsP.jpeg",
+  "keywords": [
+    "bot",
+    "node",
+    "baileys",
+    "whatsapp"
+  ],
+  "stack": "heroku-24",
+  "env": {
+    "PREFIX": {
+      "description": "Choose your bot's prefix",
+      "value": ".",
+      "required": true
+    },
+    "AUTO_STATUS_VIEW": {
+      "description": "Auto view WhatsApp status (true/false)",
+      "value": "true",
+      "required": false
+    },
+    "AUTO_REPLY": {
+      "description": "Enable auto reply feature (true/false)",
+      "value": "true",
+      "required": false
+    },
+    "AUTO_REPLY_MSG": {
+      "description": "Message sent as auto reply",
+      "value": "👋 Hello! I’m The100-MD. Use .menu to start.",
+      "required": false
+    },
+    "BOT_NAME": {
+      "description": "Name of your bot",
+      "value": "The100-MD",
+      "required": false
+    },
+    "SESSION_ID": {
+      "description": "Session ID (generated after scanning QR code)",
+      "value": "",
+      "required": true
+    },
+    "NUMERO_OWNER": {
+      "description": "Owner phone number (without '+' sign, e.g., 255673750170)",
+      "value": "255673750170",
+      "required": false
+    }
+  },
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  }
+}
