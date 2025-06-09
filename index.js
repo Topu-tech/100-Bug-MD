@@ -114,16 +114,21 @@ async function startBot() {
       }
       return;
     }
-
-    // Auto-reply
-    if (config.AUTO_REPLY) {
-      try {
-        await sock.sendMessage(from, { text: config.AUTO_REPLY_MSG }, { quoted: msg });
-        console.log('💬 Auto-replied to', msg.pushName || from);
-      } catch (err) {
-        console.error('⚠️ Auto-reply failed:', err);
-      }
-    }
+// Auto-reply (only once per user, and only in private chats)
+if (
+  config.AUTO_REPLY &&
+  !from.endsWith('@g.us') && // Ignore group messages
+  !repliedUsers.has(from)    // Only reply once per user
+) {
+  try {
+    const replyText = config.AUTO_REPLY_MSG || '🤖 This is an automated reply.';
+    await sock.sendMessage(from, { text: replyText }, { quoted: msg });
+    console.log('💬 Auto-replied to', msg.pushName || from);
+    repliedUsers.add(from);
+  } catch (err) {
+    console.error('⚠️ Auto-reply failed:', err);
+  }
+}
 
     // Command handling
     if (!body.startsWith(config.PREFIX)) {
