@@ -1,4 +1,3 @@
-require('dotenv').config();
 const {
   default: makeWASocket,
   useSingleFileAuthState,
@@ -10,29 +9,31 @@ const fs = require('fs');
 const path = require('path');
 const P = require('pino');
 
-// Load environment variables
-const SESSION_ID = process.env.SESSION_ID || '';
-const PREFIX = process.env.PREFIX || '.';
-const OWNER_NUMBER = (process.env.OWNER_NUMBER || '') + '@s.whatsapp.net';
-const BOT_NAME = process.env.BOT_NAME || 'The100-MD';
-const AUTO_STATUS_VIEW = process.env.AUTO_STATUS_VIEW === 'true';
-const AUTO_REPLY = process.env.AUTO_REPLY === 'true';
-const AUTO_REPLY_MSG = process.env.AUTO_REPLY_MSG || "👋 Hello! I'm a bot.";
+const config = require('./config'); // <=== import config
 
-// Simulate auth
+// Write session id to auth file for Baileys
 const authFile = './auth_info.json';
-fs.writeFileSync(authFile, JSON.stringify({ session: SESSION_ID }));
+fs.writeFileSync(authFile, JSON.stringify({ session: config.SESSION_ID }));
+
 const { state, saveState } = useSingleFileAuthState(authFile);
 
-// Load plugins
+// Load plugins dynamically from plugins folder
 const plugins = [];
 const pluginsDir = path.join(__dirname, 'The100Md_plugins');
-fs.readdirSync(pluginsDir).forEach(file => {
-  if (file.endsWith('.js')) {
-    const plugin = require(path.join(pluginsDir, file));
-    if (typeof plugin === 'function') plugins.push(plugin);
-  }
-});
+if (fs.existsSync(pluginsDir)) {
+  fs.readdirSync(pluginsDir).forEach(file => {
+    if (file.endsWith('.js')) {
+      try {
+        const plugin = require(path.join(pluginsDir, file));
+        if (typeof plugin === 'function') plugins.push(plugin);
+      } catch (e) {
+        console.error(`Failed loading plugin ${file}`, e);
+      }
+    }
+  });
+} else {
+  console.warn('Plugins directory not found:', pluginsDir);
+}
 
 async function startBot() {
   const { version } = await fetchLatestBaileysVersion();
@@ -42,7 +43,7 @@ async function startBot() {
     logger: P({ level: 'silent' }),
     printQRInTerminal: true,
     auth: state,
-    browser: [BOT_NAME, 'Chrome', '1.0.0']
+    browser: [config.BOT_NAME, 'Chrome', '1.0.0']
   });
 
   sock.ev.on('creds.update', saveState);
@@ -53,7 +54,7 @@ async function startBot() {
       console.log('❌ Disconnected. Reconnecting...', shouldReconnect);
       if (shouldReconnect) startBot();
     } else if (connection === 'open') {
-      console.log('✅ Bot connected as', BOT_NAME);
+      console.log(`✅ Bot connected as ${config.BOT_NAME}`);
     }
   });
 
@@ -63,37 +64,37 @@ async function startBot() {
 
     const from = msg.key.remoteJid;
 
-    // ✅ Auto Status View
-    if (AUTO_STATUS_VIEW && from === 'status@broadcast') {
+    // Auto view statuses if enabled and message is from status broadcast
+    if (config.AUTO_STATUS_VIEW && from === 'status@broadcast') {
       try {
         await sock.readMessages([msg.key]);
         console.log('👀 Auto-viewed status from', msg.pushName || msg.key.participant || 'Unknown');
       } catch (e) {
         console.error('⚠️ Failed to auto-view status:', e);
       }
-      return;
+      return; // no need to process further for status messages
     }
 
-    // ✅ Auto Reply
-    if (AUTO_REPLY) {
+    // Auto reply if enabled
+    if (config.AUTO_REPLY) {
       try {
-        await sock.sendMessage(from, { text: AUTO_REPLY_MSG }, { quoted: msg });
+        await sock.sendMessage(from, { text: config.AUTO_REPLY_MSG }, { quoted: msg });
         console.log('💬 Auto-replied to', msg.pushName || from);
       } catch (err) {
         console.error('⚠️ Auto-reply failed:', err);
       }
     }
 
-    // ✅ Command Handling
+    // Command handling
     const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
-    if (!body.startsWith(PREFIX)) return;
+    if (!body.startsWith(config.PREFIX)) return;
 
-    const command = body.slice(PREFIX.length).trim().split(/\s+/)[0].toLowerCase();
-    const args = body.slice(PREFIX.length + command.length).trim();
+    const command = body.slice(config.PREFIX.length).trim().split(/\s+/)[0].toLowerCase();
+    const args = body.slice(config.PREFIX.length + command.length).trim();
 
     for (const plugin of plugins) {
       try {
-        await plugin({ sock, msg, from, body, command, args, PREFIX, OWNER_NUMBER });
+        await plugin({ sock, msg, from, body, command, args, PREFIX: config.PREFIX, OWNER_NUMBER: config.OWNER_NUMBER });
       } catch (err) {
         console.error('⚠️ Plugin error:', err);
       }
