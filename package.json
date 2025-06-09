@@ -19,7 +19,7 @@
     "node": ">=18.x"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.1",
+    "@whiskeysockets/baileys": "^6.7.0",
     "@hapi/boom": "^10.0.1",
     "dotenv": "^16.3.1",
     "pino": "^8.19.0"
