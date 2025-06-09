@@ -1,81 +1,72 @@
-const {
-  default: makeWASocket,
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore,
-  makeInMemoryStore,
-  useMultiFileAuthState,
-  Browsers,
-} = require('@whiskeysockets/baileys');
-
+const { default: makeWASocket, makeInMemoryStore, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { Boom } = require('@hapi/boom');
 const fs = require('fs');
 const path = require('path');
-const P = require('pino');
-const { Boom } = require('@hapi/boom');
+const pino = require('pino');
 const config = require('./config');
 
-const sessionData = config.SESSION_ID.replace(/ALONE-MD;;;=>/g, '');
+// Step 1: Decode base64 session from config
+const sessionRaw = config.SESSION_ID.replace(/ALONE-MD;;;=>/g, '');
 const authPath = path.join(__dirname, 'auth');
-const credsPath = path.join(authPath, 'creds.json');
 
-if (!fs.existsSync(authPath)) fs.mkdirSync(authPath);
-
-try {
-  if (!fs.existsSync(credsPath) && sessionData !== 'skip') {
-    fs.writeFileSync(credsPath, Buffer.from(sessionData, 'base64').toString('utf-8'), 'utf-8');
-    console.log('✅ Session restored from base64');
-  } else if (sessionData !== 'skip') {
-    fs.writeFileSync(credsPath, Buffer.from(sessionData, 'base64').toString('utf-8'), 'utf-8');
-    console.log('✅ Session updated from base64');
-  }
-} catch (e) {
-  console.log('❌ Invalid session data:', e);
-  process.exit(1);
+// Step 2: Write creds.json if not exist or session is updated
+if (!fs.existsSync(`${authPath}/creds.json`) || sessionRaw !== 'skip') {
+    try {
+        fs.mkdirSync(authPath, { recursive: true });
+        fs.writeFileSync(`${authPath}/creds.json`, Buffer.from(sessionRaw, 'base64').toString('utf-8'), 'utf8');
+        console.log('✅ Session file written successfully.');
+    } catch (e) {
+        console.error('❌ Failed to write session:', e);
+        process.exit(1);
+    }
 }
 
+const store = makeInMemoryStore({ logger: pino().child({ level: 'silent' }) });
+
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState(authPath);
-  const { version } = await fetchLatestBaileysVersion();
+    const { state, saveCreds } = await useMultiFileAuthState(authPath);
+    const { version } = await fetchLatestBaileysVersion();
 
-  const sock = makeWASocket({
-    version,
-    auth: {
-      creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, P({ level: 'silent' })),
-    },
-    printQRInTerminal: false,
-    browser: Browsers.macOS('Chrome'),
-    logger: P({ level: 'silent' }),
-  });
+    const sock = makeWASocket({
+        version,
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: false,
+        auth: state,
+        browser: [config.BOT_NAME, 'Chrome', '1.0.0']
+    });
 
-  sock.ev.on('creds.update', saveCreds);
+    store.bind(sock.ev);
 
-  sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
-    if (connection === 'close') {
-      const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
-      const shouldReconnect = reason !== DisconnectReason.loggedOut;
-      console.log('❌ Disconnected. Reconnecting...', shouldReconnect);
-      if (shouldReconnect) startBot();
-    } else if (connection === 'open') {
-      console.log(`✅ Bot connected as ${config.BOT_NAME}`);
-    }
-  });
+    sock.ev.on('creds.update', saveCreds);
 
-  // Example message handler
-  sock.ev.on('messages.upsert', async ({ messages }) => {
-    const msg = messages[0];
-    if (!msg?.message || msg.key.fromMe) return;
+    sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect?.error instanceof Boom)
+                ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
+                : true;
 
-    const from = msg.key.remoteJid;
-    const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+            console.log('🔁 Connection closed. Reconnecting?', shouldReconnect);
+            if (shouldReconnect) startBot();
+        } else if (connection === 'open') {
+            console.log(`✅ Bot connected as ${config.BOT_NAME}`);
+        }
+    });
 
-    if (body.startsWith(config.PREFIX)) {
-      const command = body.slice(config.PREFIX.length).trim().split(/\s+/)[0].toLowerCase();
-      const args = body.slice(config.PREFIX.length + command.length).trim();
-      console.log(`📥 Command received: ${command}`);
-      // Add command handlers here
-    }
-  });
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+        const msg = messages[0];
+        if (!msg?.message || msg.key.fromMe) return;
+
+        const from = msg.key.remoteJid;
+
+        if (config.AUTO_REPLY) {
+            try {
+                await sock.sendMessage(from, { text: config.AUTO_REPLY_MSG }, { quoted: msg });
+                console.log('💬 Auto-replied to', from);
+            } catch (err) {
+                console.error('⚠️ Auto-reply failed:', err);
+            }
+        }
+    });
 }
 
 startBot();
