@@ -93,6 +93,22 @@ async function startBot() {
     const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
     console.log(`📥 Message from ${from}:`, body);
 
+    // === PRESENCE HANDLING ===
+    const presence = config.PRESENCE?.toLowerCase();
+    try {
+      if (presence === 'available') {
+        await sock.sendPresenceUpdate('available', from);
+      } else if (presence === 'composing' || presence === 'typing') {
+        await sock.sendPresenceUpdate('composing', from);
+      } else if (presence === 'recording') {
+        await sock.sendPresenceUpdate('recording', from);
+      } else {
+        await sock.sendPresenceUpdate('unavailable', from);
+      }
+    } catch (e) {
+      console.error('⚠️ Presence update failed:', e);
+    }
+
     // Auto-view status
     if (config.AUTO_STATUS_VIEW && from === 'status@broadcast') {
       try {
