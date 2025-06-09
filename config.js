@@ -1,43 +1,158 @@
-require('dotenv').config();
+const {
+  default: makeWASocket,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  useMultiFileAuthState,
+  makeCacheableSignalKeyStore
+} = require('@whiskeysockets/baileys');
 
-const toBool = (x) => x === 'true' || x === 'yes';
+const { Boom } = require('@hapi/boom');
+const fs = require('fs');
+const path = require('path');
+const pino = require('pino');
+const http = require('http');
+const config = require('./config');
 
-module.exports = {
-  // Session
-  SESSION_ID: process.env.SESSION_ID || '',
+// Auth folder
+const authFolder = path.join(__dirname, 'auth');
 
-  // Bot Identity
-  BOT_NAME: process.env.BOT_NAME || 'The100Bug-MD',
-  OWNER_NAME: process.env.OWNER_NAME || 'User',
-  OWNER_NUMBER: process.env.OWNER_NUMBER || '255673750170',
+// Write base64 session if not already written
+if (config.SESSION_ID) {
+  try {
+    const sessionData = config.SESSION_ID.replace(/^ALONE-MD;;;=>/, '');
+    const decoded = Buffer.from(sessionData, 'base64').toString('utf-8');
 
-  // Behavior Toggles
-  PREFIX: process.env.PREFIX || '.',
-  AUTO_REPLY: toBool(process.env.AUTO_REPLY),
-  AUTO_REPLY_MSG: process.env.AUTO_REPLY_MSG || '👋 Hello! I’m The100-MD. Use .menu to start.',
-  AUTO_STATUS_VIEW: toBool(process.env.AUTO_STATUS_VIEW),
-  AUTO_READ_MESSAGES: toBool(process.env.AUTO_READ_MESSAGES),
-  AUTO_READ_STATUS: toBool(process.env.AUTO_READ_STATUS),
-  AUTO_LIKE_STATUS: toBool(process.env.AUTO_LIKE_STATUS),
-  AUTO_DOWNLOAD_STATUS: toBool(process.env.AUTO_DOWNLOAD_STATUS),
-  AUTO_REACTION: toBool(process.env.AUTO_REACTION),
-  AUTOBIO: toBool(process.env.AUTOBIO),
+    fs.mkdirSync(authFolder, { recursive: true });
+    fs.writeFileSync(path.join(authFolder, 'creds.json'), decoded, 'utf-8');
+    console.log('✅ Session decoded and written.');
+  } catch (err) {
+    console.error('❌ Failed to decode SESSION_ID:', err);
+    process.exit(1);
+  }
+}
 
-  // Permissions and Features
-  PM_PERMIT: toBool(process.env.PM_PERMIT),
-  CHATBOT: toBool(process.env.CHATBOT),
-  PUBLIC_MODE: toBool(process.env.PUBLIC_MODE),
-  ANTI_DELETE_MESSAGE: toBool(process.env.ANTI_DELETE_MESSAGE),
-  ANTICALL: toBool(process.env.ANTICALL),
-  ANTICALL_MSG: process.env.ANTICALL_MSG || '📵 Please don’t call the bot!',
+// Plugin loader
+const plugins = [];
+const pluginsDir = path.join(__dirname, 'The100Md_plugins');
 
-  // Presence Control (New)
-  PRESENCE: process.env.PRESENCE || 'composing',
+if (fs.existsSync(pluginsDir)) {
+  const pluginFiles = fs.readdirSync(pluginsDir).filter(f => f.endsWith('.js'));
 
-  // Admin Tools
-  WARN_COUNT: parseInt(process.env.WARN_COUNT || '3'),
+  for (const file of pluginFiles) {
+    const pluginPath = path.join(pluginsDir, file);
+    try {
+      const plugin = require(pluginPath);
+      if (typeof plugin === 'function') {
+        plugins.push({ run: plugin, name: file });
+        console.log(`✅ Plugin loaded: ${file}`);
+      } else {
+        console.warn(`⚠️ Skipped ${file}: Not a function export.`);
+      }
+    } catch (err) {
+      console.error(`❌ Failed to load plugin ${file}:`, err);
+    }
+  }
+} else {
+  console.warn(`⚠️ Plugin folder not found: ${pluginsDir}`);
+}
 
-  // Deployment Info
-  HEROKU_API_KEY: process.env.HEROKU_API_KEY || '',
-  HEROKU_APP_NAME: process.env.HEROKU_APP_NAME || '',
-};
+// Start the bot
+async function startBot() {
+  const { state, saveCreds } = await useMultiFileAuthState(authFolder);
+  const { version } = await fetchLatestBaileysVersion();
+
+  const sock = makeWASocket({
+    version,
+    logger: pino({ level: 'silent' }),
+    printQRInTerminal: !config.SESSION_ID,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+    },
+    browser: [config.BOT_NAME, 'Chrome', '1.0.0']
+  });
+
+  sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
+    if (connection === 'close') {
+      const reason = lastDisconnect?.error instanceof Boom ? lastDisconnect.error : new Boom(lastDisconnect?.error);
+      const shouldReconnect = reason.output?.statusCode !== DisconnectReason.loggedOut;
+      console.log('🔌 Disconnected.', shouldReconnect ? 'Reconnecting...' : 'Logged out.');
+      if (shouldReconnect) startBot();
+    } else if (connection === 'open') {
+      console.log(`🤖 Bot connected as ${config.BOT_NAME}`);
+    }
+  });
+
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg?.message || msg.key.fromMe) return;
+
+    const from = msg.key.remoteJid;
+    const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+    console.log(`📥 Message from ${from}:`, body);
+
+    // === PRESENCE HANDLING ===
+    const presence = config.PRESENCE?.toLowerCase();
+    try {
+      if (presence === 'available') {
+        await sock.sendPresenceUpdate('available', from);
+      } else if (presence === 'composing' || presence === 'typing') {
+        await sock.sendPresenceUpdate('composing', from);
+      } else if (presence === 'recording') {
+        await sock.sendPresenceUpdate('recording', from);
+      } else {
+        await sock.sendPresenceUpdate('unavailable', from);
+      }
+    } catch (e) {
+      console.error('⚠️ Presence update failed:', e);
+    }
+
+    // Auto-view status
+    if (config.AUTO_STATUS_VIEW && from === 'status@broadcast') {
+      try {
+        await sock.readMessages([msg.key]);
+        console.log('👀 Auto-viewed status from', msg.pushName || msg.key.participant || 'Unknown');
+      } catch (e) {
+        console.error('⚠️ Failed to auto-view status:', e);
+      }
+      return;
+    }
+
+    // Auto-reply
+    if (config.AUTO_REPLY) {
+      try {
+        await sock.sendMessage(from, { text: config.AUTO_REPLY_MSG }, { quoted: msg });
+        console.log('💬 Auto-replied to', msg.pushName || from);
+      } catch (err) {
+        console.error('⚠️ Auto-reply failed:', err);
+      }
+    }
+
+    // Command handling
+    if (!body.startsWith(config.PREFIX)) return;
+
+    const command = body.slice(config.PREFIX.length).trim().split(/\s+/)[0].toLowerCase();
+    const args = body.slice(config.PREFIX.length + command.length).trim();
+
+    for (const { run, name } of plugins) {
+      try {
+        await run({ sock, msg, from, body, command, args, PREFIX: config.PREFIX, OWNER_NUMBER: config.OWNER_NUMBER });
+        console.log(`📦 Plugin executed: ${name} -> ${command}`);
+      } catch (err) {
+        console.error(`⚠️ Error in plugin ${name}:`, err);
+      }
+    }
+  });
+}
+
+startBot();
+
+// Dummy HTTP server to keep Render alive
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('🤖 WhatsApp bot is running.\n');
+}).listen(process.env.PORT || 3000, () => {
+  console.log('🌐 HTTP server listening to keep Render alive');
+});
