@@ -93,17 +93,6 @@ async function startBot() {
     const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
     console.log(`📥 Message from ${from}:`, body);
 
-    // === ALWAYS SEND PRESENCE ===
-    try {
-      const presence = (config.PRESENCE || 'composing').toLowerCase();
-      const validPresence = ['available', 'composing', 'typing', 'recording'];
-      const presenceMode = validPresence.includes(presence) ? presence : 'composing';
-
-      await sock.sendPresenceUpdate(presenceMode, from);
-    } catch (e) {
-      console.error('⚠️ Presence update failed:', e);
-    }
-
     // Auto-view status
     if (config.AUTO_STATUS_VIEW && from === 'status@broadcast') {
       try {
@@ -114,27 +103,19 @@ async function startBot() {
       }
       return;
     }
-// Auto-reply (only once per user, and only in private chats)
-if (
-  config.AUTO_REPLY &&
-  !from.endsWith('@g.us') && // Ignore group messages
-  !repliedUsers.has(from)    // Only reply once per user
-) {
-  try {
-    const replyText = config.AUTO_REPLY_MSG || '🤖 This is an automated reply.';
-    await sock.sendMessage(from, { text: replyText }, { quoted: msg });
-    console.log('💬 Auto-replied to', msg.pushName || from);
-    repliedUsers.add(from);
-  } catch (err) {
-    console.error('⚠️ Auto-reply failed:', err);
-  }
-}
+
+    // Auto-reply
+    if (config.AUTO_REPLY) {
+      try {
+        await sock.sendMessage(from, { text: config.AUTO_REPLY_MSG }, { quoted: msg });
+        console.log('💬 Auto-replied to', msg.pushName || from);
+      } catch (err) {
+        console.error('⚠️ Auto-reply failed:', err);
+      }
+    }
 
     // Command handling
-    if (!body.startsWith(config.PREFIX)) {
-      if (!config.PUBLIC_MODE && from.endsWith('@g.us')) return;
-      return;
-    }
+    if (!body.startsWith(config.PREFIX)) return;
 
     const command = body.slice(config.PREFIX.length).trim().split(/\s+/)[0].toLowerCase();
     const args = body.slice(config.PREFIX.length + command.length).trim();
