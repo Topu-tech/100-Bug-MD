@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-module.exports = async ({ sock, msg, from, command, config }) => {
+module.exports = async ({ sock, msg, from, command, config = {} }) => {
   if (command !== 'alive') return;
 
   const audioSources = [
@@ -13,12 +13,13 @@ module.exports = async ({ sock, msg, from, command, config }) => {
 
   try {
     const randomUrl = audioSources[Math.floor(Math.random() * audioSources.length)];
-
     const isAudio = randomUrl.endsWith('.mp3') || randomUrl.endsWith('.mp4');
 
-    const caption = `✅ *I'm alive and running!*\n\n🎧 Playing random audio\n🤖 \n👤 Owner: ${config.OWNER_NAME || 'Unknown'}\n🕒 Uptime: ${getUptime()}`;
+    const botName = config?.BOT_NAME || "The100Bug-MD";
+    const ownerName = config?.OWNER_NAME || "Unknown";
 
-    // Get thumbnail as buffer
+    const caption = `✅ *I'm alive and running!*\n\n🎧 Playing random audio\n🤖 ${botName}\n👤 Owner: ${ownerName}\n🕒 Uptime: ${getUptime()}`;
+
     let thumbnail;
     try {
       thumbnail = await getBuffer("https://telegra.ph/file/0a2fae9f74579c6c93a37.jpg");
@@ -28,7 +29,7 @@ module.exports = async ({ sock, msg, from, command, config }) => {
 
     const contextInfo = thumbnail ? {
       externalAdReply: {
-        title: config.BOT_NAME || "The100Bug-MD",
+        title: botName,
         body: "Alive Check ✔️",
         mediaUrl: randomUrl,
         sourceUrl: randomUrl,
