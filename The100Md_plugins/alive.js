@@ -16,7 +16,7 @@ module.exports = async ({ sock, msg, from, command, config }) => {
 
     const isAudio = randomUrl.endsWith('.mp3') || randomUrl.endsWith('.mp4');
 
-    const caption = `✅ *I'm alive and running!*\n\n🎧 Playing random audio\n🤖 Bot: ${config.BOT_NAME || 'Bot'}\n👤 Owner: ${config.OWNER_NAME || 'Unknown'}\n🕒 Uptime: ${getUptime()}`;
+    const caption = `✅ *I'm alive and running!*\n\n🎧 Playing random audio\n🤖 \n👤 Owner: ${config.OWNER_NAME || 'Unknown'}\n🕒 Uptime: ${getUptime()}`;
 
     // Get thumbnail as buffer
     let thumbnail;
