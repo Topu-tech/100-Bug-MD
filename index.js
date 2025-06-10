@@ -63,7 +63,7 @@ if (!body.startsWith(config.PREFIX)) return;
 const command = body.slice(config.PREFIX.length).trim().split(/\s+/)[0].toLowerCase();
 const args = body.slice(config.PREFIX.length + command.length).trim();
 
-if (config.PUBLIC_MODE === 'yes' || isSuperUser) {
+if (config.PUBLIC_MODE === 'yes') {
   for (const { run, name } of plugins) {
     try {
       await run({ sock, msg, from, body, command, args, PREFIX: config.PREFIX, OWNER_NUMBER: config.OWNER_NUMBER });
@@ -73,7 +73,18 @@ if (config.PUBLIC_MODE === 'yes' || isSuperUser) {
     }
   }
 } else {
-  console.log(`🔒 PRIVATE MODE: Ignored command from ${sender}`);
+  if (isSuperUser) {
+    for (const { run, name } of plugins) {
+      try {
+        await run({ sock, msg, from, body, command, args, PREFIX: config.PREFIX, OWNER_NUMBER: config.OWNER_NUMBER });
+        console.log(`📦 Plugin executed (private mode): ${name} -> ${command}`);
+      } catch (err) {
+        console.error(`⚠️ Error in plugin ${name}:`, err);
+      }
+    }
+  } else {
+    console.log(`🔒 PRIVATE MODE: Ignored command from ${sender}`);
+  }
 }
 
 }); }
