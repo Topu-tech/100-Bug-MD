@@ -15,7 +15,7 @@ module.exports = async ({ sock, msg, from, command, config, coms }) => {
   const date = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
   const time = now.toLocaleTimeString('en-US', { hour12: false });
   const prefix = config.PREFIX || '!';
-  const mode = config.MODE || 'Public';
+  const mode = config.PUBLIC_MODE || 'true';
   const owner = config.OWNER_NAME || 'Unknown';
   const botName = config.BOT_NAME || 'Bot';
   const timezone = config.TZ || 'UTC';
