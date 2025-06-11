@@ -12,7 +12,9 @@ module.exports = async ({ sock, msg, from, command, config = {} }) => {
   ];
 
   const randomUrl = mediaLinks[Math.floor(Math.random() * mediaLinks.length)];
-  const isAudio = randomUrl.endsWith('.mp3') || randomUrl.endsWith('.mp4');
+  const fileExt = randomUrl.split('.').pop().toLowerCase();
+  const isAudio = fileExt === 'mp3';
+  const isVideo = fileExt === 'mp4';
 
   const botName = config.BOT_NAME || "The100Bug-MD";
   const ownerName = config.OWNER_NAME || "Unknown";
@@ -21,25 +23,27 @@ module.exports = async ({ sock, msg, from, command, config = {} }) => {
   const aliveText = `
 ╭━━❰ *🤖 Alive Status* ❱━━⬣
 ┃✅ *Status:* Bot is active
-┃🎶 *Now Playing:* Random audio
+┃🎶 *Now Playing:* Random ${isAudio ? 'audio' : 'video'}
 ┃🤖 *Bot:* ${botName}
 ┃👤 *Owner:* ${ownerName}
 ┃⏱ *Uptime:* ${uptime}
-╰━━━───────⬣
-  `;
+╰━━━───────⬣`;
 
   try {
-    // 1. Send fancy alive text first
-    await sock.sendMessage(from, {
-      text: aliveText
-    }, { quoted: msg });
+    // Send alive text first
+    await sock.sendMessage(from, { text: aliveText }, { quoted: msg });
 
-    // 2. Then send the audio media
+    // Then send the media (audio or video)
     if (isAudio) {
       await sock.sendMessage(from, {
         audio: { url: randomUrl },
-        mimetype: randomUrl.endsWith('.mp3') ? 'audio/mpeg' : 'audio/mp4',
+        mimetype: 'audio/mpeg',
         ptt: false
+      }, { quoted: msg });
+    } else if (isVideo) {
+      await sock.sendMessage(from, {
+        video: { url: randomUrl },
+        caption: `${botName} is alive! 🔥`
       }, { quoted: msg });
     } else {
       await sock.sendMessage(from, {
@@ -55,7 +59,7 @@ module.exports = async ({ sock, msg, from, command, config = {} }) => {
   }
 };
 
-// Helper for uptime
+// Helper to format uptime
 function getUptime() {
   const sec = Math.floor(process.uptime());
   const h = Math.floor(sec / 3600);
