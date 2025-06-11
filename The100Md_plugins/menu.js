@@ -36,22 +36,37 @@ function findAllPluginCommands(dir, commandSet = new Set()) {
   return [...commandSet].sort();
 }
 
+const contextInfo = {
+  forwardingScore: 999,
+  isForwarded: true,
+  externalAdReply: {
+    title: '📢 ALONE MD Bot Menu',
+    body: 'Powered by Topu Tech • Support Channel',
+    thumbnailUrl: 'https://telegra.ph/file/1a1a85815eb6a3c145802.jpg',
+    mediaType: 1,
+    sourceUrl: 'https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r',
+    showAdAttribution: true,
+    renderLargerThumbnail: true
+  }
+};
+
 module.exports = async ({ sock, msg, from, command, PREFIX = '.', BOT_NAME = 'Bot' }) => {
   if (command !== 'menu') return;
 
-  await sock.sendMessage(from, { text: '✅ Preparing your ALONE MD menu...' }, { quoted: msg });
+  try {
+    await sock.sendMessage(from, { text: '✅ Preparing your ALONE MD menu...', contextInfo }, { quoted: msg });
 
-  const pluginPath = path.join(__dirname, 'The100Md_plugins');
-  const commands = fs.existsSync(pluginPath) ? findAllPluginCommands(pluginPath) : [];
+    const pluginPath = path.join(__dirname, 'The100Md_plugins');
+    const commands = fs.existsSync(pluginPath) ? findAllPluginCommands(pluginPath) : [];
 
-  const now = new Date();
-  const date = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
-  const time = now.toLocaleTimeString('en-US', { hour12: false });
-  const ramUsed = format(os.totalmem() - os.freemem());
-  const ramTotal = format(os.totalmem());
-  const osPlatform = os.platform();
+    const now = new Date();
+    const date = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
+    const time = now.toLocaleTimeString('en-US', { hour12: false });
+    const ramUsed = format(os.totalmem() - os.freemem());
+    const ramTotal = format(os.totalmem());
+    const osPlatform = os.platform();
 
-  const infoMsg = `
+    const infoMsg = `
 ╭─❖「 *📊 ${BOT_NAME} SYSTEM INFO* 」❖─╮
 │🗓️ Date       : ${date}
 │🕒 Time       : ${time}
@@ -60,18 +75,20 @@ module.exports = async ({ sock, msg, from, command, PREFIX = '.', BOT_NAME = 'Bo
 │💻 Platform   : ${osPlatform}
 ╰────────────────────────────╯`;
 
-  let menuMsg = `📖 *${BOT_NAME} Command Menu*\n\n`;
-  for (const cmd of commands) {
-    menuMsg += `  ┗ ${PREFIX}${cmd}\n`;
-  }
+    let menuMsg = `📖 *${BOT_NAME} Command Menu*\n\n`;
+    for (const cmd of commands) {
+      menuMsg += `  ┗ ${PREFIX}${cmd}\n`;
+    }
 
-  menuMsg += `\n⚙️ *Powered by Topu Tech*\n📢 Support: https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r`;
+    menuMsg += `\n⚙️ *Powered by Topu Tech*\n📢 Support: https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r`;
 
-  try {
-    await sock.sendMessage(from, { text: infoMsg }, { quoted: msg });
-    await sock.sendMessage(from, { text: menuMsg }, { quoted: msg });
+    await sock.sendMessage(from, { text: infoMsg, contextInfo }, { quoted: msg });
+    await sock.sendMessage(from, { text: menuMsg, contextInfo }, { quoted: msg });
   } catch (err) {
     console.error('❌ Menu send error:', err);
-    await sock.sendMessage(from, { text: `⚠️ Failed to send menu.\nError: ${err.message}` }, { quoted: msg });
+    await sock.sendMessage(from, {
+      text: `⚠️ Failed to send menu.\nError: ${err.message}`,
+      contextInfo
+    }, { quoted: msg });
   }
 };
