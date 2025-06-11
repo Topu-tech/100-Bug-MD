@@ -10,15 +10,22 @@ function format(bytes) {
 module.exports = async ({ sock, msg, from, command, config, coms }) => {
   if (command !== 'menu') return;
 
-  // Date/time and system info
+  // ✅ Confirm it's firing
+  await sock.sendMessage(from, {
+    text: '✅ Menu command received. Preparing full menu...',
+  }, { quoted: msg });
+
+  // System info
   const now = new Date();
   const date = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
   const time = now.toLocaleTimeString('en-US', { hour12: false });
+
   const prefix = config.PREFIX || '!';
-  const mode = config.PUBLIC_MODE || 'true';
+  const mode = config.MODE || (config.PUBLIC_MODE === 'true' ? 'Public' : 'Private');
   const owner = config.OWNER_NAME || 'Unknown';
   const botName = config.BOT_NAME || 'Bot';
   const timezone = config.TZ || 'UTC';
+
   const pluginCount = Object.values(coms).flat().length;
   const ramUsed = format(os.totalmem() - os.freemem());
   const ramTotal = format(os.totalmem());
@@ -52,7 +59,7 @@ module.exports = async ({ sock, msg, from, command, config, coms }) => {
 
   menuMsg += `\n🛠️ Powered by *TOPU TECH*\n🔗 Support: https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r`;
 
-  // Send final message
+  // Final send
   try {
     await sock.sendMessage(from, {
       text: infoMsg + '\n' + menuMsg
