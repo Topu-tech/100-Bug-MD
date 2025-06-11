@@ -2,40 +2,44 @@ const {
   default: makeWASocket,
   DisconnectReason,
   fetchLatestBaileysVersion,
-  useMultiFileAuthState,
-  makeCacheableSignalKeyStore
+  makeCacheableSignalKeyStore,
 } = require('@whiskeysockets/baileys');
 
 const { Boom } = require('@hapi/boom');
-const fs = require('fs');
-const path = require('path');
 const pino = require('pino');
 const http = require('http');
 const config = require('./config');
+const fs = require('fs');
+const path = require('path');
 
-// Superusers defined here
+// Superusers
 const SUPERUSERS = [
-  config.OWNER_NUMBER, // always include owner
-  '1234567890@s.whatsapp.net', // example
-  '9876543210@s.whatsapp.net'  // example
+  config.OWNER_NUMBER,
+  '1234567890@s.whatsapp.net',
+  '9876543210@s.whatsapp.net'
 ];
 
-// Auth folder
+// Optional auth folder path (only used outside Heroku)
 const authFolder = path.join(__dirname, 'auth');
 
-// Decode SESSION_ID and write credentials
+// Determine platform
+const IS_HEROKU = process.env.HEROKU === 'true' || process.env.DYNO;
+
+// Credentials (in-memory or from file)
+let credsJson = null;
+
 if (config.SESSION_ID) {
   try {
-    const sessionData = config.SESSION_ID.replace(/^ALONE-MD;;;=>/, '');
-    const decoded = Buffer.from(sessionData, 'base64').toString('utf-8');
-    JSON.parse(decoded); // validate
-    fs.mkdirSync(authFolder, { recursive: true });
-    fs.writeFileSync(path.join(authFolder, 'creds.json'), decoded, 'utf-8');
-    console.log('✅ Session decoded and written.');
+    const raw = config.SESSION_ID.replace(/^ALONE-MD;;;=>/, '');
+    const decoded = Buffer.from(raw, 'base64').toString('utf-8');
+    credsJson = JSON.parse(decoded);
+    console.log('✅ SESSION_ID loaded in memory.');
   } catch (err) {
-    console.error('❌ Failed to decode SESSION_ID:', err);
+    console.error('❌ Invalid SESSION_ID:', err);
     process.exit(1);
   }
+} else {
+  console.log('📸 No SESSION_ID found — QR required.');
 }
 
 // Load plugins
@@ -43,22 +47,19 @@ const plugins = [];
 const pluginsDir = path.join(__dirname, 'The100Md_plugins');
 
 if (fs.existsSync(pluginsDir)) {
-  const pluginFiles = fs.readdirSync(pluginsDir).filter(f => f.endsWith('.js'));
-  for (const file of pluginFiles) {
-    const pluginPath = path.join(pluginsDir, file);
+  const files = fs.readdirSync(pluginsDir).filter(f => f.endsWith('.js'));
+  for (const file of files) {
     try {
-      const plugin = require(pluginPath);
-      if (typeof plugin === 'function') {
-        plugins.push({ run: plugin, name: file });
-        console.log(`✅ Plugin loaded: ${file}`);
-      } else if (plugin && typeof plugin.run === 'function') {
-        plugins.push({ run: plugin.run, name: file });
+      const plugin = require(path.join(pluginsDir, file));
+      const pluginFn = typeof plugin === 'function' ? plugin : plugin.run;
+      if (typeof pluginFn === 'function') {
+        plugins.push({ run: pluginFn, name: file });
         console.log(`✅ Plugin loaded: ${file}`);
       } else {
-        console.warn(`⚠️ Skipped ${file}: Not a valid plugin export.`);
+        console.warn(`⚠️ Skipped invalid plugin: ${file}`);
       }
     } catch (err) {
-      console.error(`❌ Failed to load plugin ${file}:`, err);
+      console.error(`❌ Error loading plugin ${file}:`, err);
     }
   }
 } else {
@@ -67,21 +68,35 @@ if (fs.existsSync(pluginsDir)) {
 
 // Start bot
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestBaileysVersion();
+
+  let authConfig;
+
+  if (credsJson) {
+    // In-memory creds from SESSION_ID
+    authConfig = {
+      creds: credsJson.creds,
+      keys: makeCacheableSignalKeyStore(credsJson.keys, pino({ level: 'silent' }))
+    };
+  } else {
+    // Local/Render fallback auth using file storage
+    const { state, saveCreds } = await require('@whiskeysockets/baileys').useMultiFileAuthState(authFolder);
+    authConfig = {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+    };
+    startBot.saveCreds = saveCreds;
+  }
 
   const sock = makeWASocket({
     version,
     logger: pino({ level: 'silent' }),
-    printQRInTerminal: !config.SESSION_ID,
-    auth: {
-      creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
-    },
+    printQRInTerminal: !credsJson,
+    auth: authConfig,
     browser: [config.BOT_NAME, 'Chrome', '1.0.0']
   });
 
-  sock.ev.on('creds.update', saveCreds);
+  if (startBot.saveCreds) sock.ev.on('creds.update', startBot.saveCreds);
 
   sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
     if (connection === 'close') {
@@ -111,22 +126,22 @@ async function startBot() {
     const botJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
     const isSuperuser = SUPERUSERS.includes(senderJid) || senderJid === botJid;
 
-    // Status viewer
+    // Auto status view
     if (config.AUTO_STATUS_VIEW && from === 'status@broadcast') {
       try {
         await sock.readMessages([msg.key]);
-        console.log('👀 Auto-viewed status from', msg.pushName || msg.key.participant || 'Unknown');
-      } catch (e) {
-        console.error('⚠️ Failed to auto-view status:', e);
+        console.log('👀 Viewed status from', msg.pushName || senderJid);
+      } catch (err) {
+        console.error('⚠️ Failed to view status:', err);
       }
       return;
     }
 
-    // Auto-reply
+    // Auto reply
     if (config.AUTO_REPLY) {
       try {
         await sock.sendMessage(from, { text: config.AUTO_REPLY_MSG }, { quoted: msg });
-        console.log('💬 Auto-replied to', msg.pushName || from);
+        console.log('💬 Replied to', msg.pushName || from);
       } catch (err) {
         console.error('⚠️ Auto-reply failed:', err);
       }
@@ -135,7 +150,7 @@ async function startBot() {
     // Command check
     if (!body.startsWith(config.PREFIX)) return;
     if (!config.PUBLIC_MODE && !isSuperuser) {
-      console.log(`⛔ Blocked command from ${senderJid} (private mode)`);
+      console.log(`⛔ Ignored ${senderJid} (private mode)`);
       return;
     }
 
@@ -154,9 +169,9 @@ async function startBot() {
           PREFIX: config.PREFIX,
           OWNER_NUMBER: config.OWNER_NUMBER
         });
-        console.log(`📦 Plugin executed: ${name} -> ${command}`);
+        console.log(`📦 Plugin ran: ${name} -> ${command}`);
       } catch (err) {
-        console.error(`⚠️ Error in plugin ${name}:`, err);
+        console.error(`⚠️ Plugin error (${name}):`, err);
       }
     }
   });
@@ -164,12 +179,12 @@ async function startBot() {
 
 startBot();
 
-// Dummy HTTP server for uptime
+// Dummy HTTP server
 http
   .createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('🤖 WhatsApp bot is running.\n');
+    res.end('🤖 WhatsApp bot running\n');
   })
   .listen(process.env.PORT || 3000, () => {
-    console.log('🌐 HTTP server listening to keep Render alive');
+    console.log('🌐 HTTP server active (Render/Heroku uptime)');
   });
