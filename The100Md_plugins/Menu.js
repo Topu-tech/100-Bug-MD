@@ -10,34 +10,32 @@ function format(bytes) {
 module.exports = async ({ sock, msg, from, command, config, coms }) => {
   if (command !== 'menu') return;
 
-  // ✅ Confirm it's firing
+  // ✅ Acknowledge menu command
   await sock.sendMessage(from, {
-    text: '✅ Menu command received. Preparing full menu...',
+    text: '✅ Menu command received. Preparing full menu...'
   }, { quoted: msg });
 
-  // System info
+  // System and config info
   const now = new Date();
   const date = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
   const time = now.toLocaleTimeString('en-US', { hour12: false });
-
   const prefix = config.PREFIX || '!';
-  const mode = config.MODE || (config.PUBLIC_MODE === 'true' ? 'Public' : 'Private');
+  const publicMode = config.PUBLIC_MODE === 'false' ? 'false' : 'true'; // force boolean string
   const owner = config.OWNER_NAME || 'Unknown';
   const botName = config.BOT_NAME || 'Bot';
   const timezone = config.TZ || 'UTC';
-
   const pluginCount = Object.values(coms).flat().length;
   const ramUsed = format(os.totalmem() - os.freemem());
   const ramTotal = format(os.totalmem());
   const osPlatform = os.platform();
 
-  // Stylized info header
+  // 🧠 Info message
   const infoMsg = `
 ╭─❖「 *📊 ${botName} SYSTEM INFO* 」❖─╮
 │🗓️ Date       : ${date}
 │🕒 Time       : ${time}
 │🔤 Prefix     : [ ${prefix} ]
-│🧭 Mode       : ${mode} mode
+│🔁 PUBLIC_MODE: ${publicMode}
 │📦 Plugins    : ${pluginCount}
 │💾 RAM        : ${ramUsed} / ${ramTotal}
 │💻 Platform   : ${osPlatform}
@@ -46,28 +44,26 @@ module.exports = async ({ sock, msg, from, command, config, coms }) => {
 │🌐 Timezone   : ${timezone}
 ╰────────────────────────────╯`;
 
-  // Stylized command categories
-  let menuMsg = `\n📖 *${botName} Command Menu*\n`;
+  // 📖 Command list
+  let menuMsg = `📖 *${botName} Command Menu*\n`;
 
   for (const category in coms) {
-    menuMsg += `\n┌─✦ ${category.toUpperCase()} ✦\n`;
+    menuMsg += `\n🔹 *${category.toUpperCase()}*\n`;
     for (const cmd of coms[category]) {
-      menuMsg += `│ ➤ ${prefix}${cmd}\n`;
+      menuMsg += `  ┗ ${prefix}${cmd}\n`;
     }
-    menuMsg += `└─────────────⭓\n`;
   }
 
-  menuMsg += `\n🛠️ Powered by *TOPU TECH*\n🔗 Support: https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r`;
+  menuMsg += `\n⚙️ *Powered by Topu Tech*\n📢 Support: https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r`;
 
-  // Final send
+  // 📨 Send both messages
   try {
-    await sock.sendMessage(from, {
-      text: infoMsg + '\n' + menuMsg
-    }, { quoted: msg });
+    await sock.sendMessage(from, { text: infoMsg }, { quoted: msg });
+    await sock.sendMessage(from, { text: menuMsg }, { quoted: msg });
   } catch (err) {
     console.error('❌ Menu send error:', err);
     await sock.sendMessage(from, {
-      text: `⚠️ Failed to send menu.\n\nError: ${err.message}`
+      text: `⚠️ Failed to send full menu.\nError: ${err.message}`
     }, { quoted: msg });
   }
 };
