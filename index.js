@@ -12,7 +12,7 @@ const pino = require('pino');
 const http = require('http');
 const config = require('./config');
 
-// ✅ Superusers - owner + example numbers, bot JID will be added dynamically later
+// ✅ Superusers - owner + example numbers
 const SUPERUSERS = [
   config.OWNER_NUMBER,
   '1234567890@s.whatsapp.net',
@@ -100,14 +100,17 @@ async function startBot() {
   // Message handler
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
-    if (!msg?.message || msg.key.fromMe) return;
+    if (!msg?.message) return;
 
     const from = msg.key.remoteJid;
     const senderJid = msg.key.participant || msg.key.remoteJid;
     const botJid = sock.user?.id?.split(':')[0] + '@s.whatsapp.net';
     const isSuperuser = SUPERUSERS.includes(senderJid) || senderJid === botJid;
 
-    // Get message text
+    // ✅ We no longer ignore bot's own messages in groups or private
+    // ✅ So all commands by the bot itself will be handled normally
+
+    // Get message body text
     const body =
       msg.message.conversation ||
       msg.message.extendedTextMessage?.text ||
@@ -136,20 +139,20 @@ async function startBot() {
       }
     }
 
-    // Commands start with prefix
+    // Ignore if not command
     if (!body.startsWith(config.PREFIX)) return;
 
-    // If private mode and sender not superuser, block commands
+    // Block command if private mode and not superuser
     if (!config.PUBLIC_MODE && !isSuperuser) {
       console.log(`⛔ Command blocked from ${senderJid} (private mode)`);
       return;
     }
 
-    // Extract command and args
+    // Parse command and args
     const command = body.slice(config.PREFIX.length).trim().split(/\s+/)[0].toLowerCase();
     const args = body.slice(config.PREFIX.length + command.length).trim();
 
-    // Run plugins (commands)
+    // Run plugins
     for (const { run, name } of plugins) {
       try {
         await run({ sock, msg, from, body, command, args, PREFIX: config.PREFIX, OWNER_NUMBER: config.OWNER_NUMBER });
@@ -166,7 +169,7 @@ startBot().catch((err) => {
   console.error('❌ Fatal error during bot startup:', err);
 });
 
-// Dummy HTTP server to keep bot alive on platforms like Render or Heroku
+// Dummy HTTP server to keep bot alive
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('🤖 The100-Bug-MD bot is alive.\n');
