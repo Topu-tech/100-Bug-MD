@@ -1,69 +1,103 @@
 const axios = require('axios');
 
-module.exports = async ({ sock, msg, from, command, args }) => {
-  if (command !== 'video') return;
+const aliases = ['video', 'download', 'getvid', 'movie'];
 
-  const contextInfo = {
+module.exports = async ({ sock, msg, from, command, args }) => {
+  if (!aliases.includes(command)) return;
+
+  const externalContext = {
+    mentionedJid: [msg.sender],
     forwardingScore: 999,
     isForwarded: true,
     externalAdReply: {
-      title: '🎥 ALONE MD YouTube Downloader',
-      body: 'Powered by TopuTech • WhatsApp Bot',
-      thumbnailUrl: 'https://telegra.ph/file/1a1a85815eb6a3c145802.jpg',
+      title: "🎬 Video Downloader",
+      body: "100bug-MD WhatsApp Bot",
+      thumbnailUrl: "https://telegra.ph/file/fe6e7d401b0e08d6937f4.jpg",
       mediaType: 1,
-      sourceUrl: 'https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r',
+      renderLargerThumbnail: true,
       showAdAttribution: true,
-      renderLargerThumbnail: true
+      sourceUrl: "https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r"
     }
   };
 
   if (!args.length) {
-    return await sock.sendMessage(from, {
-      text: '❗ Please provide a video name.\n\nExample: .video despacito',
-      contextInfo
+    await sock.sendMessage(from, {
+      text: '❗️ Please provide a video name.\n\nExample: .video Alan Walker Faded',
+      contextInfo: externalContext
     }, { quoted: msg });
+    return;
   }
 
   const query = args.join(' ');
-  const apiUrl = `https://api.akuari.my.id/downloader/youtube?link=${encodeURIComponent(query)}`;
 
+  // Step 1: Search YouTube
+  let ytSearchUrl = `https://youtube-search-api3.p.rapidapi.com/youtube-search/?q=${encodeURIComponent(query)}`;
+  let videoUrl;
   try {
-    const res = await axios.get(apiUrl);
-    const data = res.data?.hasil;
+    const ytRes = await axios.get(ytSearchUrl, {
+      headers: {
+        'X-RapidAPI-Key': 'YOUR_API_KEY', // optional: remove if you use another public API
+        'X-RapidAPI-Host': 'youtube-search-api3.p.rapidapi.com'
+      }
+    });
 
-    if (!data?.link?.[0]) {
-      return await sock.sendMessage(from, {
-        text: `❌ No video found for "${query}"`,
-        contextInfo
-      }, { quoted: msg });
+    const firstVideo = ytRes.data.results?.find(v => v.type === 'video');
+    if (!firstVideo) throw new Error('No video found on YouTube.');
+
+    videoUrl = `https://youtu.be/${firstVideo.id}`;
+  } catch (e) {
+    console.error('❌ YouTube search failed:', e.message);
+    return await sock.sendMessage(from, {
+      text: `❌ Failed to search YouTube for "${query}".`,
+      contextInfo: externalContext
+    }, { quoted: msg });
+  }
+
+  // Step 2: Try to download using your APIs
+  const apiUrls = [
+    `https://apis.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(videoUrl)}&apikey=gifted-md`,
+    `https://www.dark-yasiya-api.site/download/ytmp4?url=${encodeURIComponent(videoUrl)}`,
+    `https://api.dreaded.site/api/ytdl/video?query=${encodeURIComponent(videoUrl)}`,
+    `https://youtube-download-api.matheusishiyama.repl.co/mp4/?url=${encodeURIComponent(videoUrl)}`
+  ];
+
+  let success = false;
+
+  for (const api of apiUrls) {
+    try {
+      const res = await axios.get(api);
+      const data = res.data;
+
+      const downloadLink = data.result?.url || data.result?.download || data.result?.video_url || data?.download_url;
+      const title = data.result?.title || data?.title || query;
+      const thumbnail = data.result?.thumbnail || data.thumbnail || "https://telegra.ph/file/fe6e7d401b0e08d6937f4.jpg";
+
+      if (downloadLink) {
+        await sock.sendMessage(from, {
+          image: { url: thumbnail },
+          caption: `🎬 *${title}*\n\n📥 Downloading video...`,
+          contextInfo: externalContext
+        }, { quoted: msg });
+
+        await sock.sendMessage(from, {
+          video: { url: downloadLink },
+          mimetype: "video/mp4",
+          caption: title,
+          contextInfo: externalContext
+        }, { quoted: msg });
+
+        success = true;
+        break;
+      }
+    } catch (err) {
+      console.warn(`❌ API failed (${api}):`, err.message);
     }
+  }
 
-    const video = data.link.find(v => v.includes('.mp4'));
-    const thumb = data.thumb;
-    const title = data.title;
-    const filesize = data.size;
-
-    // Send video info first
+  if (!success) {
     await sock.sendMessage(from, {
-      image: { url: thumb },
-      caption: `🎬 *${title}*\n💾 *Size:* ${filesize}`,
-      contextInfo
-    }, { quoted: msg });
-
-    // Send video file
-    await sock.sendMessage(from, {
-      video: { url: video },
-      mimetype: 'video/mp4',
-      fileName: `${title}.mp4`,
-      caption: '✅ Video downloaded successfully.',
-      contextInfo
-    }, { quoted: msg });
-
-  } catch (err) {
-    console.error('❌ Video command error:', err);
-    await sock.sendMessage(from, {
-      text: `⚠️ Failed to fetch video.\n${err.message}`,
-      contextInfo
+      text: `⚠️ All servers failed to fetch video for "${query}".`,
+      contextInfo: externalContext
     }, { quoted: msg });
   }
 };
