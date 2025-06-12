@@ -40,13 +40,13 @@ const contextInfo = {
   forwardingScore: 999,
   isForwarded: true,
   externalAdReply: {
-    title: '📢 ALONE MD Bot Menu',
+    title: '📢 𝗧𝗛𝗘𝟭𝟬𝟬𝗕𝗨𝗚-𝗠𝗗 Bot Menu',
     body: 'Powered by Topu Tech • Support Channel',
     thumbnailUrl: 'https://telegra.ph/file/1a1a85815eb6a3c145802.jpg',
     mediaType: 1,
     sourceUrl: 'https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r',
-    showAdAttribution: true,
-    renderLargerThumbnail: true
+    showAdAttribution: false,
+    renderLargerThumbnail: false
   }
 };
 
@@ -67,7 +67,7 @@ module.exports = async ({ sock, msg, from, command, PREFIX = '.', BOT_NAME = 'Bo
     const osPlatform = os.platform();
 
     const infoMsg = `
-╭─❖「 *📊 ${BOT_NAME} SYSTEM INFO* 」❖─╮
+╭─❖「 *𝗧𝗛𝗘𝟭𝟬𝟬𝗕𝗨𝗚-𝗠𝗗 SYSTEM INFO* 」❖─╮
 │🗓️ Date       : ${date}
 │🕒 Time       : ${time}
 │🔤 Prefix     : [ ${PREFIX} ]
@@ -75,14 +75,14 @@ module.exports = async ({ sock, msg, from, command, PREFIX = '.', BOT_NAME = 'Bo
 │💻 Platform   : ${osPlatform}
 ╰────────────────────────────╯`;
 
-    let menuMsg = `📖 *${BOT_NAME} Command Menu*\n\n`;
+    let menuMsg = `📖 *𝗧𝗛𝗘𝟭𝟬𝟬𝗕𝗨𝗚-𝗠𝗗 Command Menu*\n\n`;
     for (const cmd of commands) {
       menuMsg += `  ┗ ${PREFIX}${cmd}\n`;
     }
 
     menuMsg += `\n⚙️ *Powered by Topu Tech*\n📢 Support: https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r`;
 
-    await sock.sendMessage(from, { text: infoMsg, contextInfo }, { quoted: msg });
+    await sock.sendMessage(from, { text: infoMsg+menuMsg, contextInfo }, { quoted: msg });
     await sock.sendMessage(from, { text: menuMsg, contextInfo }, { quoted: msg });
   } catch (err) {
     console.error('❌ Menu send error:', err);
