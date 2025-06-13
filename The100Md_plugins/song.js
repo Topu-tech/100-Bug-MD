@@ -12,7 +12,7 @@ module.exports = async ({ sock, msg, from, command, args }) => {
     externalAdReply: {
       title: "🎵 Song Downloader",
       body: "100bug-MD WhatsApp Bot",
-      thumbnailUrl: "https://telegra.ph/file/fe6e7d401b0e08d6937f4.jpg",
+      thumbnailUrl: "https://files.catbox.moe/qhv6dt.jpg",
       mediaType: 1,
       renderLargerThumbnail: true,
       showAdAttribution: true,
