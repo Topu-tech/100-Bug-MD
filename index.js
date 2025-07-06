@@ -107,9 +107,6 @@ async function startBot() {
     const botJid = sock.user?.id?.split(':')[0] + '@s.whatsapp.net';
     const isSuperuser = SUPERUSERS.includes(senderJid) || senderJid === botJid;
 
-    // ✅ We no longer ignore bot's own messages in groups or private
-    // ✅ So all commands by the bot itself will be handled normally
-
     // Get message body text
     const body =
       msg.message.conversation ||
@@ -148,9 +145,10 @@ async function startBot() {
       return;
     }
 
-    // Parse command and args
-    const command = body.slice(config.PREFIX.length).trim().split(/\s+/)[0].toLowerCase();
-    const args = body.slice(config.PREFIX.length + command.length).trim();
+    // === FIXED COMMAND PARSING ===
+    const parts = body.slice(config.PREFIX.length).trim().split(/\s+/);
+    const command = parts[0].toLowerCase();
+    const args = parts.slice(1);
 
     // Run plugins
     for (const { run, name } of plugins) {
