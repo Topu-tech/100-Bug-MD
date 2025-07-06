@@ -30,7 +30,6 @@ module.exports = async ({ sock, msg, from, command, args }) => {
 
   const query = args.join(" ");
 
-  // Step 1: Search YouTube for the song using youtube-search-api package
   let firstResult;
   try {
     const searchResults = await YoutubeSearchApi.GetListByKeyword(query, false, 1);
@@ -46,7 +45,6 @@ module.exports = async ({ sock, msg, from, command, args }) => {
 
   const videoUrl = `https://www.youtube.com/watch?v=${firstResult.id}`;
 
-  // Step 2: Try all available MP3 download APIs
   const apiUrls = [
     `https://apis.davidcyriltech.my.id/download/ytmp3?url=${encodeURIComponent(videoUrl)}&apikey=gifted-md`,
     `https://www.dark-yasiya-api.site/download/ytmp3?url=${encodeURIComponent(videoUrl)}`,
@@ -60,6 +58,7 @@ module.exports = async ({ sock, msg, from, command, args }) => {
     try {
       const res = await axios.get(api);
       const data = res.data;
+      console.log("API Response from", api, data); // Debug log
 
       const downloadLink =
         data.result?.url ||
@@ -76,14 +75,12 @@ module.exports = async ({ sock, msg, from, command, args }) => {
         continue;
       }
 
-      // Send preview image and title
       await sock.sendMessage(from, {
         image: { url: thumbnail },
         caption: `🎶 *${title}*\n\n🔗 ${videoUrl}`,
         contextInfo: externalContext
       }, { quoted: msg });
 
-      // Send the MP3 file
       await sock.sendMessage(from, {
         audio: { url: downloadLink },
         mimetype: "audio/mpeg",
@@ -100,7 +97,6 @@ module.exports = async ({ sock, msg, from, command, args }) => {
     }
   }
 
-  // Final fallback if all servers failed
   if (!success) {
     await sock.sendMessage(from, {
       text: `❌ All servers failed to download MP3 for *${query}*.\nPlease try again later.`,
