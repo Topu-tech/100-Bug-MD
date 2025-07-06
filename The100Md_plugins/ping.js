@@ -4,17 +4,20 @@ module.exports = async ({ sock, msg, from, command }) => {
   try {
     if (command !== 'ping' || !msg?.key) return;
 
-    // Step 1: Quick Ping Response
+    // Step 1: Send quick Pong reply
     const reply = await sock.sendMessage(from, { text: '🏓 Pong!' }, { quoted: msg });
 
-    // Step 2: Delay & Calculate Stats
+    // Wait 1 second (simulate processing time)
+    await new Promise(r => setTimeout(r, 1000));
+
+    // Gather system info
     const start = Date.now();
     const uptime = process.uptime();
     const cpu = os.cpus()[0].model;
     const platform = os.platform();
     const speed = os.cpus()[0].speed;
-    const ram = (os.totalmem() - os.freemem()) / (1024 * 1024);
-    const totalRam = os.totalmem() / (1024 * 1024);
+    const ramUsed = (os.totalmem() - os.freemem()) / (1024 * 1024);
+    const ramTotal = os.totalmem() / (1024 * 1024);
     let battery = 'Unknown';
 
     try {
@@ -27,7 +30,9 @@ module.exports = async ({ sock, msg, from, command }) => {
       if (batteryStatus?.content?.[0]?.attrs?.value) {
         battery = batteryStatus.content[0].attrs.value + '%';
       }
-    } catch (e) {}
+    } catch (e) {
+      // Ignore battery errors silently
+    }
 
     const stats = `
 🏓 *PONG UPDATED!*
@@ -38,12 +43,15 @@ module.exports = async ({ sock, msg, from, command }) => {
 💻 *CPU:* ${cpu}
 ⚙️ *Platform:* ${platform}
 🚀 *CPU Speed:* ${speed} MHz
-📦 *RAM:* ${ram.toFixed(2)} MB / ${totalRam.toFixed(2)} MB
+📦 *RAM:* ${ramUsed.toFixed(2)} MB / ${ramTotal.toFixed(2)} MB
 ━━━━━━━━━━━━━━━
 `.trim();
 
-    // Step 3: Edit Reply (simulate by deleting & resending)
-    await sock.sendMessage(from, { text: stats }, { quoted: msg, edit: reply.key });
+    // Step 2: Send detailed stats as a new message (quoted)
+    await sock.sendMessage(from, { text: stats }, { quoted: msg });
+
+    // Step 3: Delete original Pong message to reduce clutter
+    await sock.sendMessage(from, { delete: reply.key });
 
   } catch (err) {
     console.error('🔴 ping error:', err);
