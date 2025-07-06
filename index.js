@@ -61,6 +61,9 @@ if (fs.existsSync(pluginsDir)) {
   console.warn(`⚠️ Plugins folder missing: ${pluginsDir}`);
 }
 
+// **Expose plugins globally for menu command**
+global.loadedPlugins = plugins;
+
 // Start the bot
 async function startBot() {
   console.log('🟡 Starting bot...');
