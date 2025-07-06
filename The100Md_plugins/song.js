@@ -1,4 +1,5 @@
 const axios = require("axios");
+const { YoutubeSearchApi } = require('youtube-search-api');
 
 const aliases = ["song", "mp3", "getsong"]; // support multiple aliases
 
@@ -28,15 +29,13 @@ module.exports = async ({ sock, msg, from, command, args }) => {
   }
 
   const query = args.join(" ");
-  let videoUrl;
 
-  // Step 1: Search YouTube for the song
+  // Step 1: Search YouTube for the song using youtube-search-api package
+  let firstResult;
   try {
-    const search = await axios.get(`https://pencarian-video.vercel.app/api/ytsearch?query=${encodeURIComponent(query)}`);
-    const firstResult = search.data.result?.[0];
-    if (!firstResult || !firstResult.url) throw new Error("No video found.");
-
-    videoUrl = firstResult.url;
+    const searchResults = await YoutubeSearchApi.GetListByKeyword(query, false, 1);
+    firstResult = searchResults?.items?.[0];
+    if (!firstResult) throw new Error('No video found');
   } catch (e) {
     console.error("❌ YouTube search error:", e.message);
     return await sock.sendMessage(from, {
@@ -44,6 +43,8 @@ module.exports = async ({ sock, msg, from, command, args }) => {
       contextInfo: externalContext
     }, { quoted: msg });
   }
+
+  const videoUrl = `https://www.youtube.com/watch?v=${firstResult.id}`;
 
   // Step 2: Try all available MP3 download APIs
   const apiUrls = [
