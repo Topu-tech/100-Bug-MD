@@ -45,14 +45,27 @@ module.exports = async ({ sock, msg, from, command, PREFIX = '.', BOT_NAME = 'TH
 ╰────────────────────────────╯
 `;
 
-    const commandList = commandNames.length
-      ? `🛠 *Command List* (${commandNames.length} total):\n\n` +
-        commandNames.sort().map(cmd => `▪️ ${PREFIX}${cmd}`).join('\n')
-      : '⚠️ No commands found.';
+    const categories = {
+      "Group": ["group", "tagall", "promote", "demote", "kick", "grouplink", "setname", "setdesc", "admins", "info"],
+      "Downloader": ["song", "video"],
+      "System": ["ping", "menu", "alive", "owner", "quote"]
+    };
 
-    const footer = `\n\n🌐 *Topu Tech™ | Bug Bot 2025*\n📢 Join: https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r`;
+    let categorizedMenu = "🛠 *Command Menu:*\n\n";
 
-    const finalText = systemInfo + '\n' + commandList + footer;
+    for (const [category, cmds] of Object.entries(categories)) {
+      const listed = cmds
+        .filter(cmd => commandNames.includes(cmd))
+        .map(cmd => `▪️ ${PREFIX}${cmd}`)
+        .join('\n');
+      if (listed) {
+        categorizedMenu += `📂 *${category}*\n${listed}\n\n`;
+      }
+    }
+
+    const footer = `🌐 *Topu Tech™ | Bug Bot 2025*\n📢`;
+
+    const finalText = systemInfo + '\n' + categorizedMenu + footer;
 
     await sock.sendMessage(from, { text: finalText, contextInfo }, { quoted: msg });
   } catch (err) {
