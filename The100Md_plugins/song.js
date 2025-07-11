@@ -1,7 +1,7 @@
 const axios = require("axios");
 const { YoutubeSearchApi } = require('youtube-search-api');
 
-const aliases = ["song", "mp3", "getsong"]; // support multiple aliases
+const aliases = ["song", "mp3", "getsong"]; // Multiple command aliases
 
 module.exports = async ({ sock, msg, from, command, args }) => {
   if (!aliases.includes(command)) return;
@@ -23,7 +23,7 @@ module.exports = async ({ sock, msg, from, command, args }) => {
 
   if (!args.length) {
     return await sock.sendMessage(from, {
-      text: '❗️ Please provide a song name.\n\nExample: .mp3 Despacito',
+      text: '❗ Please provide a song name.\n\nExample: .mp3 Despacito',
       contextInfo: externalContext
     }, { quoted: msg });
   }
@@ -58,7 +58,7 @@ module.exports = async ({ sock, msg, from, command, args }) => {
     try {
       const res = await axios.get(api);
       const data = res.data;
-      console.log("API Response from", api, data); // Debug log
+      console.log("✅ API Response from", api, data);
 
       const downloadLink =
         data.result?.url ||
@@ -75,12 +75,14 @@ module.exports = async ({ sock, msg, from, command, args }) => {
         continue;
       }
 
+      // Send thumbnail & video link
       await sock.sendMessage(from, {
         image: { url: thumbnail },
         caption: `🎶 *${title}*\n\n🔗 ${videoUrl}`,
         contextInfo: externalContext
       }, { quoted: msg });
 
+      // Send audio file
       await sock.sendMessage(from, {
         audio: { url: downloadLink },
         mimetype: "audio/mpeg",
