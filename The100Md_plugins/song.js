@@ -1,108 +1,90 @@
 const axios = require("axios");
-const { YoutubeSearchApi } = require('youtube-search-api');
-
-const aliases = ["song", "mp3", "getsong"]; // Multiple command aliases
+const ytSearch = require("yt-search");
 
 module.exports = async ({ sock, msg, from, command, args }) => {
+  const aliases = ["play", "song", "ytmp3", "audio", "mp3"];
   if (!aliases.includes(command)) return;
 
   const externalContext = {
-    mentionedJid: [msg.sender],
     forwardingScore: 999,
     isForwarded: true,
     externalAdReply: {
-      title: "🎵 Song Downloader",
-      body: "100bug-MD WhatsApp Bot",
-      thumbnailUrl: "https://files.catbox.moe/qhv6dt.jpg",
+      title: "♻️ Bug MD Audio Downloader ♻️",
+      body: "Powered by 100bug-MD",
+      thumbnailUrl: "https://telegra.ph/file/94f5c37a2b1d6c93a97ae.jpg",
+      sourceUrl: "https://github.com/Topu-tech/Backup-md",
       mediaType: 1,
-      renderLargerThumbnail: true,
-      showAdAttribution: true,
-      sourceUrl: "https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r"
-    }
+      renderLargerThumbnail: false,
+      showAdAttribution: false,
+    },
   };
 
-  if (!args.length) {
-    return await sock.sendMessage(from, {
-      text: '❗ Please provide a song name.\n\nExample: .mp3 Despacito',
-      contextInfo: externalContext
-    }, { quoted: msg });
-  }
+  const reply = async (text) => {
+    await sock.sendMessage(from, { text, contextInfo: externalContext }, { quoted: msg });
+  };
+
+  if (!args.length) return reply("❗ Please provide a song name.");
 
   const query = args.join(" ");
 
-  let firstResult;
   try {
-    const searchResults = await YoutubeSearchApi.GetListByKeyword(query, false, 1);
-    firstResult = searchResults?.items?.[0];
-    if (!firstResult) throw new Error('No video found');
-  } catch (e) {
-    console.error("❌ YouTube search error:", e.message);
-    return await sock.sendMessage(from, {
-      text: `❌ Could not find any song for *${query}*.\nTry again with a different name.`,
-      contextInfo: externalContext
-    }, { quoted: msg });
-  }
+    const results = await ytSearch(query);
+    if (!results || !results.videos.length) return reply("❌ No audio found for the query.");
 
-  const videoUrl = `https://www.youtube.com/watch?v=${firstResult.id}`;
+    const video = results.videos[0];
+    const videoUrl = video.url;
+    const title = video.title;
+    const [artist, songTitle] = title.includes(" - ") ? title.split(" - ", 2) : ["Unknown Artist", title];
 
-  const apiUrls = [
-    `https://apis.davidcyriltech.my.id/download/ytmp3?url=${encodeURIComponent(videoUrl)}&apikey=gifted-md`,
-    `https://www.dark-yasiya-api.site/download/ytmp3?url=${encodeURIComponent(videoUrl)}`,
-    `https://api.dreaded.site/api/ytdl/audio?query=${encodeURIComponent(videoUrl)}`,
-    `https://youtube-download-api.matheusishiyama.repl.co/mp3/?url=${encodeURIComponent(videoUrl)}`
-  ];
+    await sock.sendMessage(from, { text: "```Downloading...```" }, { quoted: msg });
 
-  let success = false;
-
-  for (const api of apiUrls) {
-    try {
-      const res = await axios.get(api);
-      const data = res.data;
-      console.log("✅ API Response from", api, data);
-
-      const downloadLink =
-        data.result?.url ||
-        data.result?.download ||
-        data.result?.audio_url ||
-        data.download_url;
-
-      const title = data.result?.title || data.title || query;
-      const thumbnail =
-        data.result?.thumbnail || data.thumbnail || "https://telegra.ph/file/fe6e7d401b0e08d6937f4.jpg";
-
-      if (!downloadLink || downloadLink.length < 5) {
-        console.warn(`⚠️ Invalid or empty download link from: ${api}`);
-        continue;
+    const tryApi = async (url) => {
+      try {
+        const res = await axios.get(url);
+        return res.data;
+      } catch {
+        return null;
       }
+    };
 
-      // Send thumbnail & video link
-      await sock.sendMessage(from, {
-        image: { url: thumbnail },
-        caption: `🎶 *${title}*\n\n🔗 ${videoUrl}`,
-        contextInfo: externalContext
-      }, { quoted: msg });
+    const apis = [
+      `https://apis.davidcyriltech.my.id/download/ytmp3?url=${encodeURIComponent(videoUrl)}&apikey=gifted-md`,
+      `https://www.dark-yasiya-api.site/download/ytmp3?url=${encodeURIComponent(videoUrl)}`,
+      `https://api.dreaded.site/api/ytdl/audio?query=${encodeURIComponent(videoUrl)}`
+    ];
 
-      // Send audio file
-      await sock.sendMessage(from, {
-        audio: { url: downloadLink },
-        mimetype: "audio/mpeg",
-        fileName: `${title}.mp3`,
-        ptt: false,
-        contextInfo: externalContext
-      }, { quoted: msg });
-
-      success = true;
-      break;
-    } catch (err) {
-      console.warn(`❌ API failed (${api}): ${err.message}`);
-      continue;
+    let response = null;
+    for (const api of apis) {
+      response = await tryApi(api);
+      if (response?.result?.download_url || response?.result?.url) break;
     }
-  }
 
-  if (!success) {
+    if (!response) return reply("❌ All sources failed. Try again later.");
+
+    const downloadUrl = response.result.download_url || response.result.url;
+    const thumbnail = response.result.thumbnail || video.thumbnail;
+
     await sock.sendMessage(from, {
-      text: `❌ All servers failed to download MP3 for *${query}*.\nPlease try again later.`,
-      contextInfo: externalContext
+      audio: { url: downloadUrl },
+      mimetype: "audio/mp4",
+      fileName: `${title}.mp3`,
+      contextInfo: {
+        externalAdReply: {
+          title: "♻️ Bug MD Audio Downloader ♻️",
+          body: `🎵 ${artist} - ${songTitle}`,
+          thumbnailUrl: thumbnail,
+          sourceUrl: videoUrl,
+          mediaType: 1,
+          renderLargerThumbnail: false,
+          showAdAttribution: false,
+          forwardingScore: 999,
+          isForwarded: true,
+        },
+      },
     }, { quoted: msg });
+
+  } catch (err) {
+    console.error("Download Error:", err);
+    return reply("❌ Download failed: " + (err.message || err));
   }
 };
