@@ -1,25 +1,17 @@
 const os = require('os');
 
+// ✅ Define verified JIDs here (your number)
+const VERIFIED_JIDS = [
+  "1234567890@s.whatsapp.net", // Replace with your real JID
+  "0@s.whatsapp.net"
+];
+
 function format(bytes) {
   const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
   if (bytes === 0) return '0 Byte';
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
 }
-
-const contextInfo = {
-  forwardingScore: 999,
-  isForwarded: true,
-  externalAdReply: {
-    title: '🧠 THE100BUG-MD • Commands',
-    body: 'Powered by Topu Tech • WhatsApp Bot',
-    thumbnailUrl: 'https://files.catbox.moe/qhv6dt.jpg',
-    mediaType: 1,
-    sourceUrl: 'https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r',
-    showAdAttribution: false,
-    renderLargerThumbnail: true
-  }
-};
 
 module.exports = async ({ sock, msg, from, command, PREFIX = '.', BOT_NAME = 'THE100BUG-MD' }) => {
   if (command !== 'menu') return;
@@ -45,34 +37,51 @@ module.exports = async ({ sock, msg, from, command, PREFIX = '.', BOT_NAME = 'TH
 ╰────────────────────────────╯
 `;
 
-    const categories = {
-      "Group": ["group", "tagall", "promote", "demote", "kick", "grouplink", "setname", "setdesc", "admins", "info"],
-      "Downloader": ["song", "video"],
-      "System": ["ping", "menu", "alive", "owner", "quote"]
+    const commandList = commandNames.length
+      ? `🛠 *Command List* (${commandNames.length} total):\n\n` +
+        commandNames.sort().map(cmd => `▪️ ${PREFIX}${cmd}`).join('\n')
+      : '⚠️ No commands found.';
+
+    const footer = `\n\n🌐 *Topu Tech™ | Bug Bot 2025*\n📢 Join: https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r`;
+
+    const finalText = systemInfo + '\n' + commandList + footer;
+
+    // ✅ Check if sender is in verified list
+    const isVerified = VERIFIED_JIDS.includes(msg.sender);
+
+    const contextInfo = {
+      forwardingScore: 999,
+      isForwarded: true,
+      externalAdReply: {
+        title: isVerified ? '✅ Topu Tech Verified' : '🧠 THE100BUG-MD • Commands',
+        body: isVerified
+          ? 'Official WhatsApp Bot by Topu Tech'
+          : 'Powered by Topu Tech • WhatsApp Bot',
+        thumbnailUrl: 'https://files.catbox.moe/qhv6dt.jpg',
+        mediaType: 1,
+        sourceUrl: 'https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r',
+        showAdAttribution: isVerified, // 👈 This adds the verified badge look
+        renderLargerThumbnail: true
+      }
     };
 
-    let categorizedMenu = "🛠 *Command Menu:*\n\n";
-
-    for (const [category, cmds] of Object.entries(categories)) {
-      const listed = cmds
-        .filter(cmd => commandNames.includes(cmd))
-        .map(cmd => `▪️ ${PREFIX}${cmd}`)
-        .join('\n');
-      if (listed) {
-        categorizedMenu += `📂 *${category}*\n${listed}\n\n`;
-      }
-    }
-
-    const footer = `🌐 *Topu Tech™ | Bug Bot 2025*\n📢`;
-
-    const finalText = systemInfo + '\n' + categorizedMenu + footer;
-
     await sock.sendMessage(from, { text: finalText, contextInfo }, { quoted: msg });
+
   } catch (err) {
     console.error('❌ Menu error:', err);
     await sock.sendMessage(from, {
       text: `⚠️ Failed to show menu.\nError: ${err.message}`,
-      contextInfo
+      contextInfo: {
+        externalAdReply: {
+          title: '❌ Menu Error',
+          body: 'Something went wrong',
+          thumbnailUrl: 'https://files.catbox.moe/qhv6dt.jpg',
+          mediaType: 1,
+          sourceUrl: 'https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r',
+          showAdAttribution: false,
+          renderLargerThumbnail: true
+        }
+      }
     }, { quoted: msg });
   }
 };
