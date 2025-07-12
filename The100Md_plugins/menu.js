@@ -1,9 +1,8 @@
 const os = require('os');
 
-// ✅ Define verified JIDs here (your number)
+// ✅ Define verified JIDs here
 const VERIFIED_JIDS = [
-  "255673750170@s.whatsapp.net", // your real number
-];
+  "255673750170@s.whatsapp.net" // Your real number
 ];
 
 function format(bytes) {
@@ -13,16 +12,42 @@ function format(bytes) {
   return (bytes / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i];
 }
 
-module.exports = async ({ sock, msg, from, command, PREFIX = '.', BOT_NAME = 'THE100BUG-MD' }) => {
+function isValidTimezone(tz) {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+module.exports = async ({ sock, msg, from, command, PREFIX = '.', BOT_NAME = 'THE100BUG-MD', TIME_ZONE }) => {
   if (command !== 'menu') return;
 
   try {
+    const timezoneToUse = isValidTimezone(TIME_ZONE) ? TIME_ZONE : 'Africa/Arusha';
+
+    const now = new Date();
+
+    const date = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezoneToUse,
+      weekday: 'long',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }).format(now);
+
+    const time = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezoneToUse,
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }).format(now);
+
     const pluginList = global.loadedPlugins || [];
     const commandNames = pluginList.map(p => p.name?.replace('.js', '')).filter(Boolean);
 
-    const now = new Date();
-    const date = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
-    const time = now.toLocaleTimeString('en-US', { hour12: false });
     const ramUsed = format(os.totalmem() - os.freemem());
     const ramTotal = format(os.totalmem());
     const osPlatform = os.platform();
@@ -60,7 +85,7 @@ module.exports = async ({ sock, msg, from, command, PREFIX = '.', BOT_NAME = 'TH
         thumbnailUrl: 'https://files.catbox.moe/qhv6dt.jpg',
         mediaType: 1,
         sourceUrl: 'https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r',
-        showAdAttribution: isVerified, // 👈 This adds the verified badge look
+        showAdAttribution: isVerified, // ✅ shows verified badge
         renderLargerThumbnail: true
       }
     };
