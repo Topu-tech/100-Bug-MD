@@ -2,8 +2,8 @@ const os = require('os');
 
 // ✅ Define verified JIDs here (your number)
 const VERIFIED_JIDS = [
-  "1234567890@s.whatsapp.net", // Replace with your real JID
-  "0@s.whatsapp.net"
+  "255673750170@s.whatsapp.net", // your real number
+];
 ];
 
 function format(bytes) {
