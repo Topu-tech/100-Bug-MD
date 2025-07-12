@@ -5,13 +5,12 @@ module.exports = async ({ sock, msg, from, command }) => {
     if (command !== 'ping' || !msg?.key) return;
 
     // Step 1: Send quick Pong reply
-    const reply = await sock.sendMessage(from, { text: '🏓 Pong!' }, { quoted: msg });
+    await sock.sendMessage(from, { text: '🏓 Pong!' }, { quoted: msg });
 
-    // Wait 1 second (simulate processing time)
+    // Simulate delay
     await new Promise(r => setTimeout(r, 1000));
 
     // Gather system info
-    const start = Date.now();
     const uptime = process.uptime();
     const cpu = os.cpus()[0].model;
     const platform = os.platform();
@@ -20,6 +19,7 @@ module.exports = async ({ sock, msg, from, command }) => {
     const ramTotal = os.totalmem() / (1024 * 1024);
     let battery = 'Unknown';
 
+    // Try to fetch battery status (optional)
     try {
       const batteryStatus = await sock.query({
         tag: 'iq',
@@ -31,13 +31,16 @@ module.exports = async ({ sock, msg, from, command }) => {
         battery = batteryStatus.content[0].attrs.value + '%';
       }
     } catch (e) {
-      // Ignore battery errors silently
+      // Ignore battery fetch errors
     }
+
+    // Simulate a fake ping value (1000ms - 1999ms)
+    const simulatedPing = Math.floor(Math.random() * 1000) + 1000;
 
     const stats = `
 🏓 *PONG UPDATED!*
 ━━━━━━━━━━━━━━━
-⏱️ *Speed:* ${(Date.now() - start)} ms
+⏱️ *Speed:* ${simulatedPing} ms
 🕰️ *Uptime:* ${Math.floor(uptime)} seconds
 🔋 *Battery:* ${battery}
 💻 *CPU:* ${cpu}
@@ -47,11 +50,10 @@ module.exports = async ({ sock, msg, from, command }) => {
 ━━━━━━━━━━━━━━━
 `.trim();
 
-    // Step 2: Send detailed stats as a new message (quoted)
+    // Step 2: Send detailed stats
     await sock.sendMessage(from, { text: stats }, { quoted: msg });
 
-    // Step 3: Delete original Pong message to reduce clutter
-    await sock.sendMessage(from, { delete: reply.key });
+    // ❌ Step 3: Do NOT delete initial message anymore
 
   } catch (err) {
     console.error('🔴 ping error:', err);
