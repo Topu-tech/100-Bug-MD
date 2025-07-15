@@ -1,7 +1,7 @@
 const axios = require('axios');
 const moment = require('moment-timezone');
 
-// 👑 Your newsletter JID
+// ✨ Add your newsletter JID here
 const newsletterJid = '120363295141350550@newsletter';
 
 const sources = [
@@ -23,70 +23,94 @@ const sources = [
   }
 ];
 
-// 🔁 Function to send daily post
-async function sendDailyNewsletter(sock) {
-  try {
-    const result = await sources[Math.floor(Math.random() * sources.length)]();
+const aliases = ['quote', 'fact', 'advice', 'wisdom', 'inspire'];
 
-    const now = moment().tz('Africa/Arusha');
-    const date = now.format('dddd, MMM D, YYYY');
-    const time = now.format('HH:mm:ss');
+module.exports = {
+  name: 'quote',
+  description: 'Get a random quote, fact, or advice — auto-posts to newsletter too!',
+  type: 'fun',
+  async run({ sock, msg, from, command }) {
+    if (!aliases.includes(command)) return;
 
-    let header = '';
-    let body = '';
+    try {
+      const result = await sources[Math.floor(Math.random() * sources.length)]();
 
-    switch (result.type) {
-      case 'quote':
-        header = '🧠 *Enjoy today\'s quote!*';
-        body = `“${result.content}”\n— *${result.author}*`;
-        break;
-      case 'advice':
-        header = '💡 *Lemme advice you bro...*';
-        body = `_${result.content}_`;
-        break;
-      case 'fact':
-        header = '🤔 *Did you know?*';
-        body = result.content;
-        break;
-    }
+      const now = moment().tz('Africa/Arusha');
+      const date = now.format('dddd, MMM D, YYYY');
+      const time = now.format('HH:mm:ss');
+      const sender = msg.pushName || from.split('@')[0];
 
-    const finalText = `${header}
+      let header = '';
+      let body = '';
+
+      switch (result.type) {
+        case 'quote':
+          header = '🧠 *Enjoy today\'s quote!*';
+          body = `“${result.content}”\n— *${result.author}*`;
+          break;
+        case 'advice':
+          header = '💡 *Lemme advice you bro...*';
+          body = `_${result.content}_`;
+          break;
+        case 'fact':
+          header = '🤔 *Did you know?*';
+          body = result.content;
+          break;
+      }
+
+      const finalText = `${header}
 ━━━━━━━━━━━━━━━━━━━━
 ${body}
 
 🕒 *Time:* ${time}
 📅 *Date:* ${date}
+👤 *User:* ${sender}
 📍 *Type:* ${result.type.toUpperCase()}
 `;
 
-    const contextInfo = {
-      forwardingScore: 999,
-      isForwarded: true,
-      forwardedNewsletterMessageInfo: {
-        newsletterJid,
-        newsletterName: 'THE100BUG-MD Official Channel',
-        serverMessageId: 143
-      },
-      externalAdReply: {
-        title: '✅ Topu Tech Verified',
-        body: 'Official WhatsApp Bot by Topu Tech',
-        thumbnailUrl: 'https://files.catbox.moe/qhv6dt.jpg',
-        mediaType: 1,
-        sourceUrl: 'https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r',
-        showAdAttribution: true,
-        renderLargerThumbnail: true
+      const contextInfo = {
+        forwardingScore: 999,
+        isForwarded: true,
+        forwardedNewsletterMessageInfo: {
+          newsletterJid,
+          newsletterName: 'THE100BUG-MD Official Channel',
+          serverMessageId: 143
+        },
+        externalAdReply: {
+          title: '✅ Topu Tech Verified',
+          body: 'Official WhatsApp Bot by Topu Tech',
+          thumbnailUrl: 'https://files.catbox.moe/qhv6dt.jpg',
+          mediaType: 1,
+          sourceUrl: 'https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r',
+          showAdAttribution: true,
+          renderLargerThumbnail: true
+        }
+      };
+
+      // 1️⃣ Send to the user who invoked the command
+      await sock.sendMessage(from, {
+        text: finalText,
+        contextInfo
+      }, { quoted: msg });
+
+      // 2️⃣ Auto-post to newsletter if not already triggered from it
+      if (from !== newsletterJid) {
+        try {
+          await sock.sendMessage(newsletterJid, {
+            text: finalText,
+            contextInfo
+          });
+          console.log(`[✅] Sent quote to newsletter: ${newsletterJid}`);
+        } catch (e) {
+          console.warn('⚠️ Failed to send to newsletter:', e.message || e);
+        }
       }
-    };
 
-    await sock.sendMessage(newsletterJid, {
-      text: finalText,
-      contextInfo
-    });
-
-    console.log(`[✅] Posted daily content to ${newsletterJid}`);
-  } catch (err) {
-    console.error('❌ Failed to post newsletter:', err.message || err);
+    } catch (err) {
+      console.error('❌ Quote command error:', err.message || err);
+      await sock.sendMessage(from, {
+        text: `⚠️ Could not fetch anything right now. Please try again later.`
+      }, { quoted: msg });
+    }
   }
-}
-
-module.exports = sendDailyNewsletter;
+};
