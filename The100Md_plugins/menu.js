@@ -1,8 +1,8 @@
 const os = require('os');
+const axios = require('axios');
 
-// ✅ Define verified JIDs here
 const VERIFIED_JIDS = [
-  "255673750170@s.whatsapp.net" // Your real number
+  "255673750170@s.whatsapp.net"
 ];
 
 function format(bytes) {
@@ -18,6 +18,33 @@ function isValidTimezone(tz) {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function getRandomEnrichment() {
+  const types = ['fact', 'advice', 'quote'];
+  const selected = types[Math.floor(Math.random() * types.length)];
+
+  try {
+    switch (selected) {
+      case 'fact': {
+        const res = await axios.get('https://uselessfacts.jsph.pl/api/v2/facts/random');
+        return `💡 *Did you know?* ${res.data.text}`;
+      }
+      case 'advice': {
+        const res = await axios.get('https://api.adviceslip.com/advice');
+        return `🧠 *Lemme advice you bro:* ${res.data.slip.advice}`;
+      }
+      case 'quote': {
+        const res = await axios.get('https://zenquotes.io/api/random');
+        const quote = res.data[0];
+        return `📝 *Enjoy today's quote:* "${quote.q}" — ${quote.a}`;
+      }
+      default:
+        return "🌟 Keep shining!";
+    }
+  } catch (err) {
+    return "💬 Life is like code — keep debugging and moving forward.";
   }
 }
 
@@ -67,16 +94,36 @@ module.exports = async ({ sock, msg, from, command, PREFIX = '.', BOT_NAME = 'TH
         commandNames.sort().map(cmd => `▪️ ${PREFIX}${cmd}`).join('\n')
       : '⚠️ No commands found.';
 
-    const footer = `\n\n🌐 *Topu Tech™ | Bug Bot 2025*\n📢 Join: https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r`;
+    // 🔁 Fetch enrichment message
+    const enrichment = await getRandomEnrichment();
 
-    const finalText = systemInfo + '\n' + commandList + footer;
+    const finalText = `
+✨ *『 𝑾𝑬𝑳𝑪𝑶𝑴𝑬 𝑻𝑶 𝑻𝑯𝑬 𝑴𝑨𝑱𝑬𝑺𝑻𝑰𝑪 𝑨𝑳𝑶𝑵𝑬 𝑩𝑶𝑻 』* ✨
+👋🏽 *Greetings, Royal User!*
+Here's your personalized system overview & command portal:
 
-    // ✅ Check if sender is in verified list
+${systemInfo}
+
+${commandList}
+
+${enrichment}
+
+━━━━━━━━━━━━━━━
+🌐 *𝑻𝒐𝒑𝒖 𝑻𝒆𝒄𝒉™ | 𝑩𝒖𝒈 𝑩𝒐𝒕 𝟐𝟎𝟐𝟓*
+📢 Join our Kingdom: https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r
+👑 *Powerfully crafted with purpose.*
+`;
+
     const isVerified = VERIFIED_JIDS.includes(msg.sender);
 
     const contextInfo = {
       forwardingScore: 999,
       isForwarded: true,
+      forwardedNewsletterMessageInfo: {
+        newsletterJid: '120363295141350550@newsletter',
+        newsletterName: 'ALONE Queen MD V²',
+        serverMessageId: 143
+      },
       externalAdReply: {
         title: isVerified ? '✅ Topu Tech Verified' : '🧠 THE100BUG-MD • Commands',
         body: isVerified
@@ -85,7 +132,7 @@ module.exports = async ({ sock, msg, from, command, PREFIX = '.', BOT_NAME = 'TH
         thumbnailUrl: 'https://files.catbox.moe/qhv6dt.jpg',
         mediaType: 1,
         sourceUrl: 'https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r',
-        showAdAttribution: isVerified, // ✅ shows verified badge
+        showAdAttribution: true,
         renderLargerThumbnail: true
       }
     };
@@ -97,13 +144,20 @@ module.exports = async ({ sock, msg, from, command, PREFIX = '.', BOT_NAME = 'TH
     await sock.sendMessage(from, {
       text: `⚠️ Failed to show menu.\nError: ${err.message}`,
       contextInfo: {
+        forwardingScore: 999,
+        isForwarded: true,
+        forwardedNewsletterMessageInfo: {
+          newsletterJid: '120363295141350550@newsletter',
+          newsletterName: 'ALONE Queen MD V²',
+          serverMessageId: 143
+        },
         externalAdReply: {
           title: '❌ Menu Error',
           body: 'Something went wrong',
           thumbnailUrl: 'https://files.catbox.moe/qhv6dt.jpg',
           mediaType: 1,
           sourceUrl: 'https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r',
-          showAdAttribution: false,
+          showAdAttribution: true,
           renderLargerThumbnail: true
         }
       }
