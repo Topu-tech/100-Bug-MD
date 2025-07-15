@@ -98,7 +98,7 @@ module.exports = async ({ sock, msg, from, command, PREFIX = '.', BOT_NAME = 'TH
     const enrichment = await getRandomEnrichment();
 
     const finalText = `
-✨ *『 𝑾𝑬𝑳𝑪𝑶𝑴𝑬 𝑻𝑶 𝑻𝑯𝑬 𝑴𝑨𝑱𝑬𝑺𝑻𝑰𝑪 𝑨𝑳𝑶𝑵𝑬 𝑩𝑶𝑻 』* ✨
+✨ *『 𝑾𝑬𝑳𝑪𝑶𝑴𝑬 𝑻𝑶 𝑻𝑯𝑬 𝑴𝑨𝑱𝑬𝑺𝑻𝑰𝑪 100 BUG 𝑩𝑶𝑻 』* ✨
 👋🏽 *Greetings, Royal User!*
 Here's your personalized system overview & command portal:
 
@@ -110,7 +110,7 @@ ${enrichment}
 
 ━━━━━━━━━━━━━━━
 🌐 *𝑻𝒐𝒑𝒖 𝑻𝒆𝒄𝒉™ | 𝑩𝒖𝒈 𝑩𝒐𝒕 𝟐𝟎𝟐𝟓*
-📢 Join our Kingdom: https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r
+📢 Join our Kingdom: 
 👑 *Powerfully crafted with purpose.*
 `;
 
