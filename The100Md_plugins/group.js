@@ -1,239 +1,163 @@
+// ✅ group.js — Full Pro Group Management for 100 BUG MD
+
 const fs = require('fs');
 const path = require('path');
 
 const antilinkDBPath = path.join(__dirname, 'antilink.json');
-const antilinkDB = fs.existsSync(antilinkDBPath) ? JSON.parse(fs.readFileSync(antilinkDBPath)) : {};
+const warnDBPath = path.join(__dirname, 'warnings.json');
 
-function saveAntilinkDB() {
-  fs.writeFileSync(antilinkDBPath, JSON.stringify(antilinkDB, null, 2));
+const antilinkDB = fs.existsSync(antilinkDBPath) ? JSON.parse(fs.readFileSync(antilinkDBPath)) : {};
+const warningsDB = fs.existsSync(warnDBPath) ? JSON.parse(fs.readFileSync(warnDBPath)) : {};
+
+function saveJSON(file, data) {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-// Your contextInfo with newsletter forwarding info
-const defaultContextInfo = {
+// Your newsletter contextInfo for "View Channel" button
+const newsletterContextInfo = {
   forwardingScore: 999,
   isForwarded: true,
   forwardedNewsletterMessageInfo: {
     newsletterJid: '120363295141350550@newsletter',
-    newsletterName: 'ALONE Queen MD V²',
+    newsletterName: '100 BUG MD Official Channel',
     serverMessageId: 143
   }
 };
 
-// Button to view the channel
-const viewChannelButton = {
-  urlButton: {
-    displayText: 'View Channel',
-    url: 'https://whatsapp.com/channel/0029VaeRrcnADTOKzivM0S1r'
-  }
-};
+module.exports = async function ({ sock, msg, from, command, args, isGroup, isBotAdmin, isAdmin, sender, participants }) {
+  if (!isGroup) return;
 
-// Reaction emoji map per command
-const commandReactions = {
-  antilink: '🚫',
-  promote: '👑',
-  demote: '⚠️',
-  kick: '🦵',
-  group: '🔓',
-  tagall: '📢',
-  grouplink: '🔗',
-  setname: '✏️',
-  setdesc: '📝',
-  admins: '👥',
-  info: 'ℹ️',
-  default: '✅'
-};
-
-// Helper: react then reply with button and context info
-async function reactAndReply(sock, from, msg, text, command) {
-  const reactEmoji = commandReactions[command] || commandReactions.default;
-  try {
-    // Send reaction emoji to user's message
-    await sock.sendMessage(from, {
-      react: {
-        text: reactEmoji,
-        key: msg.key
-      }
-    });
-
-    // Then send reply with button and contextInfo
+  // Helper: reply with newsletter context and quoted message
+  const reply = async (text, mentions = []) => {
     await sock.sendMessage(from, {
       text,
-      footer: '✅ ALONE Queen MD V²',
-      templateButtons: [viewChannelButton],
-      contextInfo: defaultContextInfo
+      mentions,
+      contextInfo: newsletterContextInfo
     }, { quoted: msg });
-  } catch (e) {
-    console.error('Reaction or reply failed:', e);
-  }
-}
+  };
 
-module.exports = async ({ sock, msg, from, command, args }) => {
-  const groupCommands = [
-    "group", "tagall", "promote", "demote", "kick",
-    "grouplink", "setname", "setdesc", "admins", "info", "antilink"
-  ];
-  if (!groupCommands.includes(command)) return;
+  // Helper: send reaction emoji
+  const react = async (emoji) => {
+    await sock.sendMessage(from, {
+      react: { text: emoji, key: msg.key }
+    });
+  };
 
-  if (!from.endsWith("@g.us")) {
-    return await reactAndReply(sock, from, msg, "❗ This command only works in groups.", command);
-  }
+  // Get mentioned user or null
+  const mention = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || null;
+  const botNumber = sock.user.id.split(':')[0] + '@s.whatsapp.net';
 
-  const metadata = await sock.groupMetadata(from);
-  const admins = metadata.participants.filter(p => p.admin).map(p => p.id);
-  const sender = msg.key.participant || msg.key.remoteJid;
-  const isAdmin = admins.includes(sender);
+  // ----- AntiLink Monitoring for links in messages -----
+  if (antilinkDB[from]) {
+    const text = (msg.message.conversation || msg.message.extendedTextMessage?.text || '') || '';
+    const linkPattern = /(https?:\/\/[^\s]+)/i;
+    if (linkPattern.test(text)) {
+      if (!isAdmin) {
+        warningsDB[from] = warningsDB[from] || {};
+        warningsDB[from][sender] = (warningsDB[from][sender] || 0) + 1;
+        saveJSON(warnDBPath, warningsDB);
 
-  const botJid = sock.user?.id?.split(':')[0] + '@s.whatsapp.net';
+        const warnCount = warningsDB[from][sender];
 
-  // Antilink Command Handler
-  if (command === "antilink") {
-    if (!isAdmin) return reactAndReply(sock, from, msg, "⛔ Admins only can change antilink settings.", command);
-
-    const subCmd = args[0]?.toLowerCase();
-    if (!subCmd) {
-      return reactAndReply(sock, from, msg,
-`⚙️ *Antilink Settings*:
-• .antilink on - Enable Antilink
-• .antilink off - Disable Antilink
-• .antilink remove - Auto-kick users on link
-• .antilink warn - Only warn users on link`, command);
-    }
-
-    if (["on", "off"].includes(subCmd)) {
-      antilinkDB[from] = antilinkDB[from] || {};
-      antilinkDB[from].enabled = subCmd === "on";
-      saveAntilinkDB();
-      return reactAndReply(sock, from, msg, `✅ Antilink has been ${subCmd === "on" ? "enabled" : "disabled"}.`, command);
-    }
-
-    if (["remove", "warn"].includes(subCmd)) {
-      antilinkDB[from] = antilinkDB[from] || { enabled: false };
-      if (!antilinkDB[from].enabled) {
-        return reactAndReply(sock, from, msg, "❗ Enable Antilink first using `.antilink on`.", command);
-      }
-      antilinkDB[from].action = subCmd;
-      saveAntilinkDB();
-      return reactAndReply(sock, from, msg, `✅ Antilink action set to *${subCmd}*.`, command);
-    }
-
-    return reactAndReply(sock, from, msg, "❗ Invalid option. Use `.antilink` to see available settings.", command);
-  }
-
-  // Antilink Auto-detection
-  const anti = antilinkDB[from];
-  if (anti?.enabled && msg.message) {
-    const body =
-      msg.message.conversation ||
-      msg.message.extendedTextMessage?.text ||
-      msg.message.imageMessage?.caption ||
-      msg.message.videoMessage?.caption || "";
-
-    const linkPattern = /((https?:\/\/|www\.)[^\s]+|[^\s]+\.(com|net|org|xyz|info|link|shop|io|co|uk|ru|app|me))/gi;
-
-    if (linkPattern.test(body)) {
-      if (!admins.includes(sender) && sender !== botJid) {
-        try {
-          await sock.sendMessage(from, {
-            delete: {
-              remoteJid: from,
-              fromMe: false,
-              id: msg.key.id,
-              participant: sender
-            }
-          });
-
-          if (anti.action === "remove") {
-            await sock.sendMessage(from, {
-              text: `🚫 *Link Detected!*\nUser removed: @${sender.split("@")[0]}`,
-              mentions: [sender],
-              contextInfo: defaultContextInfo
-            });
-            await sock.groupParticipantsUpdate(from, [sender], "remove");
-          } else if (anti.action === "warn") {
-            await sock.sendMessage(from, {
-              text: `⚠️ *Link Detected!*\n@${sender.split("@")[0]} has been warned.`,
-              mentions: [sender],
-              contextInfo: defaultContextInfo
-            });
-          }
-        } catch (e) {
-          console.error("❌ Antilink Error:", e);
+        if (warnCount >= 3) {
+          await react('❌');
+          await reply(`❌ @${sender.split('@')[0]} has reached 3/3 warnings and is removed from the group!`, [sender]);
+          await sock.groupParticipantsUpdate(from, [sender], 'remove');
+          delete warningsDB[from][sender];
+          saveJSON(warnDBPath, warningsDB);
+          return;
+        } else {
+          await react('⚠️');
+          await reply(`⚠️ [Antilink Warning]\n\n@${sender.split('@')[0]}, links are not allowed here!\n\n🔁 Warning ${warnCount}/3\n🚫 3 warnings = Auto-Kick`, [sender]);
+          return;
+        }
+      } else {
+        // If sender is admin, tease admins if antilink is off
+        if (!antilinkDB[from]) {
+          await reply(`😏 Hey admins 🥱... do you like these links? 😂\n\nOr give me admin so I can do my job of Antilink! 🙂`);
         }
       }
     }
   }
 
-  if (!isAdmin) return reactAndReply(sock, from, msg, "⛔ *Admin Only Command!*", command);
+  // ----- Command Handling -----
+  if (!command) return;
 
-  switch (command) {
-    case "group":
-      if (!args[0] || !["open", "close"].includes(args[0])) {
-        return reactAndReply(sock, from, msg, "Usage:\n.group open → open group\n.group close → close group", command);
-      }
-      await sock.groupSettingUpdate(from, args[0] === "open" ? "not_announcement" : "announcement");
-      return reactAndReply(sock, from, msg, `✅ Group successfully ${args[0] === "open" ? "opened" : "closed"}.`, command);
+  switch (command.toLowerCase()) {
+    case 'promote':
+      if (!isAdmin || !isBotAdmin) return reply('❌ You need to be admin and bot must be admin to promote.');
+      if (!mention) return reply('❗ Please mention a user to promote.');
+      await sock.groupParticipantsUpdate(from, [mention], 'promote');
+      await react('🆙');
+      return reply(`👑 @${mention.split('@')[0]} has been promoted!`, [mention]);
 
-    case "tagall": {
-      const mentions = metadata.participants.map(p => p.id);
-      const tagText = mentions.map(p => `@${p.split("@")[0]}`).join(" ");
-      return sock.sendMessage(from, {
-        text: tagText,
-        mentions,
-        footer: '✅ ALONE Queen MD V²',
-        templateButtons: [viewChannelButton],
-        contextInfo: defaultContextInfo
-      }, { quoted: msg });
-    }
+    case 'demote':
+      if (!isAdmin || !isBotAdmin) return reply('❌ You need to be admin and bot must be admin to demote.');
+      if (!mention) return reply('❗ Please mention a user to demote.');
+      await sock.groupParticipantsUpdate(from, [mention], 'demote');
+      await react('🔻');
+      return reply(`⚠️ @${mention.split('@')[0]} has been demoted.`, [mention]);
 
-    case "promote":
-    case "demote":
-      if (!msg.mentionedJid?.length) return reactAndReply(sock, from, msg, "❗ Mention a user.", command);
-      await sock.groupParticipantsUpdate(from, [msg.mentionedJid[0]], command);
-      return reactAndReply(sock, from, msg, `✅ ${command === "promote" ? "Promoted" : "Demoted"} @${msg.mentionedJid[0].split("@")[0]}`, command);
-
-    case "kick":
-      if (!msg.mentionedJid?.length) return reactAndReply(sock, from, msg, "❗ Mention a user to kick.", command);
-      await sock.groupParticipantsUpdate(from, [msg.mentionedJid[0]], "remove");
-      return reactAndReply(sock, from, msg, `✅ Kicked @${msg.mentionedJid[0].split("@")[0]}`, command);
-
-    case "grouplink":
-      try {
-        const inviteCode = await sock.groupInviteCode(from);
-        return reactAndReply(sock, from, msg, `🔗 *Group Link:*\nhttps://chat.whatsapp.com/${inviteCode}`, command);
-      } catch {
-        return reactAndReply(sock, from, msg, "❗ Failed to get group invite link. Make sure the bot has permissions.", command);
+    case 'antilink':
+      if (!isAdmin) return reply('🚫 Only admins can toggle antilink.');
+      if (!args[0]) return reply(`🔗 Antilink is currently *${antilinkDB[from] ? 'ON' : 'OFF'}*\nUse *.antilink on* or *.antilink off*`);
+      const on = args[0].toLowerCase() === 'on';
+      if (on) {
+        antilinkDB[from] = true;
+        saveJSON(antilinkDBPath, antilinkDB);
+        return reply('✅ Antilink is now *ENABLED*.');
+      } else {
+        delete antilinkDB[from];
+        saveJSON(antilinkDBPath, antilinkDB);
+        return reply('❌ Antilink is now *DISABLED*.');
       }
 
-    case "setname":
-      if (!args.length) return reactAndReply(sock, from, msg, "❗ Provide a new group name.", command);
-      await sock.groupUpdateSubject(from, args.join(" "));
-      return reactAndReply(sock, from, msg, `✅ Group name changed to: ${args.join(" ")}`, command);
+    case 'resetwarn':
+      if (!isAdmin) return reply('🚫 Only admins can reset warnings.');
+      warningsDB[from] = {};
+      saveJSON(warnDBPath, warningsDB);
+      return reply('🧹 All warnings have been reset for this group.');
 
-    case "setdesc":
-      if (!args.length) return reactAndReply(sock, from, msg, "❗ Provide a new group description.", command);
-      await sock.groupUpdateDescription(from, args.join(" "));
-      return reactAndReply(sock, from, msg, `✅ Group description updated.`, command);
-
-    case "admins": {
-      const adminList = admins.map(id => `@${id.split("@")[0]}`).join("\n");
+    case 'tagall':
+      if (!isAdmin) return reply('🚫 Only admins can tag all.');
+      const tagText = participants.map(p => `➤ @${p.id.split('@')[0]}`).join('\n');
       return sock.sendMessage(from, {
-        text: `👑 *Admins List:*\n\n${adminList}`,
-        mentions: admins,
-        footer: '✅ ALONE Queen MD V²',
-        templateButtons: [viewChannelButton],
-        contextInfo: defaultContextInfo
-      }, { quoted: msg });
-    }
+        text: `🔊 *Tagging all members:*\n\n${tagText}`,
+        mentions: participants.map(p => p.id),
+        contextInfo: newsletterContextInfo
+      });
 
-    case "info": {
-      const info = `
-👥 *Group Info*
-• Name: ${metadata.subject}
-• Members: ${metadata.participants.length}
-• Description: ${metadata.desc || "No Description"}
-• Owner: ${metadata.owner || "Unknown"}
-`;
-      return reactAndReply(sock, from, msg, info, command);
-    }
+    case 'mute':
+      if (!isAdmin || !isBotAdmin) return reply('🚫 You and bot must be admins to mute.');
+      await sock.groupSettingUpdate(from, 'announcement');
+      await react('🔇');
+      return reply('🔇 Group is now muted (only admins can send messages).');
+
+    case 'unmute':
+      if (!isAdmin || !isBotAdmin) return reply('🚫 You and bot must be admins to unmute.');
+      await sock.groupSettingUpdate(from, 'not_announcement');
+      await react('🔊');
+      return reply('🔊 Group is now unmuted (everyone can send messages).');
+
+    case 'welcome':
+      if (!isAdmin) return reply('🚫 Only admins can toggle welcome messages.');
+      if (!args[0]) return reply(`👋 Welcome messages are *${antilinkDB['welcome_' + from] ? 'ON' : 'OFF'}*\nUse *.welcome on* or *.welcome off*`);
+      if (args[0].toLowerCase() === 'on') {
+        antilinkDB['welcome_' + from] = true;
+        saveJSON(antilinkDBPath, antilinkDB);
+        return reply('📥 Welcome messages *ENABLED*.');
+      } else {
+        delete antilinkDB['welcome_' + from];
+        saveJSON(antilinkDBPath, antilinkDB);
+        return reply('📤 Welcome messages *DISABLED*.');
+      }
+
+    case 'leave':
+      if (!isAdmin) return reply('🚫 Only admins can order me to leave.');
+      await reply('👋 Bye bye! Leaving this group as ordered by admin.');
+      return sock.groupLeave(from);
+
+    default:
+      return; // Ignore other commands here
   }
 };
