@@ -46,7 +46,7 @@
       "value": "",
       "required": true
     },
-      "PRESENCE": {
+      "WA_PRESENCE": {
       "description": "Choose your bot's presence",
       "value": "recording",
       "required": true
