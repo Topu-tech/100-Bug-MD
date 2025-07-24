@@ -1,105 +1,140 @@
-// group.js — Pro Edition for 100 BUG MD 🚀
+const fs = require('fs'); const path = require('path'); const { extractUrls, isAdmin, repondre, pickRandom } = require('../lib');
 
-const fs = require("fs"); const path = require("path"); const antilinkDBPath = path.join(__dirname, "antilink.json"); const warnsDBPath = path.join(__dirname, "warns.json");
+const warnDBPath = path.join(__dirname, '../lib/warn.json'); let warnDB = fs.existsSync(warnDBPath) ? JSON.parse(fs.readFileSync(warnDBPath)) : {};
 
-let antilinkDB = fs.existsSync(antilinkDBPath) ? JSON.parse(fs.readFileSync(antilinkDBPath)) : {}; let warnsDB = fs.existsSync(warnsDBPath) ? JSON.parse(fs.readFileSync(warnsDBPath)) : {};
+const saveWarnDB = () => fs.writeFileSync(warnDBPath, JSON.stringify(warnDB, null, 2));
 
-const contextInfo = { forwardingScore: 999, isForwarded: true, forwardedNewsletterMessageInfo: { newsletterJid: "120363295141350550@newsletter", newsletterName: "100 BUG MD Official Channel", serverMessageId: 143 } };
+const antilinkPath = path.join(__dirname, '../lib/antilink.json'); let antilinkDB = fs.existsSync(antilinkPath) ? JSON.parse(fs.readFileSync(antilinkPath)) : {};
 
-const fancyReply = async (sock, from, msg, text) => { await sock.sendMessage(from, { react: { text: "📢", key: msg.key } }); await sock.sendMessage(from, { text: `✨ 100 BUG MD
+const saveAntilinkDB = () => fs.writeFileSync(antilinkPath, JSON.stringify(antilinkDB, null, 2));
 
-${text}`, contextInfo }, { quoted: msg }); };
+const contextInfo = { forwardingScore: 999, isForwarded: true, forwardedNewsletterMessageInfo: { newsletterJid: '120363295141350550@newsletter', newsletterName: '100 BUG MD Official Channel', serverMessageId: 143 } };
 
-const saveAntilinkDB = () => fs.writeFileSync(antilinkDBPath, JSON.stringify(antilinkDB, null, 2)); const saveWarnsDB = () => fs.writeFileSync(warnsDBPath, JSON.stringify(warnsDB, null, 2));
+module.exports = { run: async ({ sock, msg, from, command, args }) => { const sender = msg.key.participant || msg.key.remoteJid; const groupMetadata = msg.isGroup ? await sock.groupMetadata(from) : {}; const participants = groupMetadata.participants || []; const isBotAdmin = participants.find(p => p.id === sock.user.id)?.admin; const isSenderAdmin = isAdmin(participants, sender);
 
-module.exports = async ({ sock, msg, from, command, args, isGroup, groupMetadata, isAdmin, isBotAdmin, sender }) => { if (!isGroup || !command) return; const senderNum = sender.split("@")[0]; const metadata = groupMetadata; const groupId = from;
+const reply = async (text) => {
+  await sock.sendMessage(from, { text, contextInfo }, { quoted: msg });
+};
 
-// Initialize group data if (!antilinkDB[groupId]) antilinkDB[groupId] = { enabled: false, warn: false, remove: false }; if (!warnsDB[groupId]) warnsDB[groupId] = {};
+const react = async (emoji) => {
+  await sock.sendMessage(from, { react: { text: emoji, key: msg.key } });
+};
 
-const groupAntilink = antilinkDB[groupId]; const groupWarns = warnsDB[groupId];
-
-// Admin-only if (!isAdmin) return fancyReply(sock, from, msg, "🚫 Admin-only command.");
-
-switch (command) { case "antilink": { const option = (args[0] || '').toLowerCase(); if (!['on', 'off', 'warn', 'remove'].includes(option)) { return fancyReply(sock, from, msg, `🔧 Antilink Settings:
-
-`antilink on` - Delete links from non-admins
-
-`antilink warn` - Delete + warn (3x then remove)
-
-`antilink remove` - Instantly remove on link
-
-`antilink off` - Disable protection` ); }
-
-groupAntilink.enabled = option === 'on' || option === 'warn' || option === 'remove';
-groupAntilink.warn = option === 'warn';
-groupAntilink.remove = option === 'remove';
-saveAntilinkDB();
-
-return fancyReply(sock, from, msg, `✅ Antilink set to *${option.toUpperCase()}*.`);
-
+switch (command) {
+  case 'promote': {
+    if (!isSenderAdmin) return reply('🚫 You must be admin.');
+    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+    if (!mentioned.length) return reply('❗ Mention a user.');
+    await sock.groupParticipantsUpdate(from, mentioned, 'promote');
+    react('🆙');
+    reply('👑 User promoted.');
+    break;
+  }
+  case 'demote': {
+    if (!isSenderAdmin) return reply('🚫 You must be admin.');
+    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+    if (!mentioned.length) return reply('❗ Mention a user.');
+    await sock.groupParticipantsUpdate(from, mentioned, 'demote');
+    react('📤');
+    reply('🙃 User demoted.');
+    break;
+  }
+  case 'tagall': {
+    if (!isSenderAdmin) return reply('🚫 You must be admin.');
+    const text = args.join(' ') || '📢 Attention everyone!';
+    const mentions = participants.map(p => p.id);
+    await sock.sendMessage(from, {
+      text,
+      mentions
+    }, { quoted: msg });
+    react('🔔');
+    break;
+  }
+  case 'mute': {
+    if (!isSenderAdmin || !isBotAdmin) return reply('🚫 Bot or you must be admin.');
+    await sock.groupSettingUpdate(from, 'announcement');
+    react('🔇');
+    reply('🔕 Group muted.');
+    break;
+  }
+  case 'unmute': {
+    if (!isSenderAdmin || !isBotAdmin) return reply('🚫 Bot or you must be admin.');
+    await sock.groupSettingUpdate(from, 'not_announcement');
+    react('🔊');
+    reply('🔔 Group unmuted.');
+    break;
+  }
+  case 'leave': {
+    if (!isSenderAdmin) return reply('❌ You need to be admin.');
+    react('👋');
+    await sock.sendMessage(from, { text: '👋 Bye bye!' });
+    await sock.groupLeave(from);
+    break;
+  }
+  case 'resetwarn': {
+    warnDB[from] = {};
+    saveWarnDB();
+    reply('✅ All warnings reset.');
+    break;
+  }
+  case 'welcome': {
+    if (!isSenderAdmin) return reply('❌ You need to be admin.');
+    const set = args[0];
+    if (!['on', 'off'].includes(set)) return reply('💡 Usage: welcome on/off');
+    const filePath = path.join(__dirname, '../lib/welcome.json');
+    const welcomeDB = fs.existsSync(filePath) ? JSON.parse(fs.readFileSync(filePath)) : {};
+    if (set === 'on') welcomeDB[from] = true;
+    else delete welcomeDB[from];
+    fs.writeFileSync(filePath, JSON.stringify(welcomeDB, null, 2));
+    reply(`✅ Welcome turned ${set}`);
+    break;
+  }
+  case 'antilink': {
+    if (!isSenderAdmin) return reply('🚫 Admin only.');
+    const mode = args[0];
+    if (!['on', 'off', 'warn', 'remove'].includes(mode)) return reply('⚙️ Use: antilink [on|off|warn|remove]');
+    if (mode === 'off') delete antilinkDB[from];
+    else antilinkDB[from] = mode;
+    saveAntilinkDB();
+    reply(`🔗 Antilink set to *${mode}*`);
+    break;
+  }
 }
 
-case "tagall": { const members = metadata.participants.map(p => @${p.id.split("@")[0]}).join(" "); return sock.sendMessage(from, { text: `📢 TAG ALL:
+// Antilink auto action
+if (msg.isGroup && msg.message?.conversation && antilinkDB[from]) {
+  const text = msg.message.conversation;
+  const urls = extractUrls(text);
+  if (urls.length > 0 && !isSenderAdmin) {
+    const mode = antilinkDB[from];
+    await sock.sendMessage(from, { delete: msg.key });
 
+    if (mode === 'warn') {
+      const warns = (warnDB[from]?.[sender] || 0) + 1;
+      warnDB[from] = warnDB[from] || {};
+      warnDB[from][sender] = warns;
+      saveWarnDB();
 
-${args.join(" ") || 'Hello everyone!'}
+      reply(`⚠️ Link detected. Warn ${warns}/3`);
 
-${members}`, mentions: metadata.participants.map(p => p.id), contextInfo }, { quoted: msg }); }
-
-case "mute": {
-  if (!isBotAdmin) return fancyReply(sock, from, msg, "🤖 I'm not admin!");
-  await sock.groupSettingUpdate(from, 'announcement');
-  return fancyReply(sock, from, msg, "🔇 Group is now *Muted*.");
+      if (warns >= 3) {
+        await sock.groupParticipantsUpdate(from, [sender], 'remove');
+        delete warnDB[from][sender];
+        saveWarnDB();
+        reply('🚫 User removed after 3 warnings.');
+      }
+    } else if (mode === 'remove') {
+      await sock.groupParticipantsUpdate(from, [sender], 'remove');
+      reply('🚫 Link sent. User removed.');
+    } else if (mode === 'on') {
+      reply(pickRandom([
+        'Hey admins🥱...do you like these links? 😂',
+        'Give me admin 😤 I miss deleting links 😭',
+        'I wish I had admin rights 🤖'
+      ]));
+    }
+  }
 }
 
-case "unmute": {
-  if (!isBotAdmin) return fancyReply(sock, from, msg, "🤖 I'm not admin!");
-  await sock.groupSettingUpdate(from, 'not_announcement');
-  return fancyReply(sock, from, msg, "🔊 Group is now *Unmuted*.");
-}
-
-case "resetwarn": {
-  warnsDB[groupId] = {};
-  saveWarnsDB();
-  return fancyReply(sock, from, msg, `✅ All warnings cleared.`);
-}
-
-case "leave": {
-  await fancyReply(sock, from, msg, `👋 Bye! Leaving group...`);
-  return sock.groupLeave(from);
-}
-
-} };
-
-// Link Monitor module.exports.linkMonitor = async ({ sock, msg, from, isGroup, sender, isBotAdmin, isAdmin }) => { if (!isGroup || !msg.message || !antilinkDB[from] || !antilinkDB[from].enabled) return; const urls = msg.message?.conversation?.match(/https?://\S+/g) || []; if (urls.length === 0) return;
-
-const groupAntilink = antilinkDB[from]; const senderNum = sender.split("@")[0];
-
-if (isAdmin) return; await sock.sendMessage(from, { delete: msg.key });
-
-if (groupAntilink.remove) { await sock.sendMessage(from, { text: ⛔️ *LINK DETECTED!* @${senderNum} removed instantly by *ANTILINK REMOVE*, mentions: [sender], contextInfo }); return sock.groupParticipantsUpdate(from, [sender], 'remove'); }
-
-if (groupAntilink.warn) { warnsDB[from][sender] = (warnsDB[from][sender] || 0) + 1; saveWarnsDB(); const strikes = warnsDB[from][sender];
-
-if (strikes >= 3) {
-  await sock.sendMessage(from, {
-    text: `🚫 *@${senderNum}* warned 3x. Removed.`,
-    mentions: [sender],
-    contextInfo
-  });
-  delete warnsDB[from][sender];
-  saveWarnsDB();
-  return sock.groupParticipantsUpdate(from, [sender], 'remove');
-} else {
-  await sock.sendMessage(from, {
-    text: `⚠️ *Warning ${strikes}/3* for @${senderNum} - Sending links is prohibited!`,
-    mentions: [sender],
-    contextInfo
-  });
-}
-return;
-
-}
-
-// Only 'on' mode — no warn/remove await sock.sendMessage(from, { text: 😒 Hey admins... Do you like these links? 😂 Maybe give me admin to protect this group better 🤖, contextInfo }); };
+}, name: 'group', commands: ['promote', 'demote', 'tagall', 'mute', 'unmute', 'leave', 'resetwarn', 'welcome', 'antilink'] };
 
