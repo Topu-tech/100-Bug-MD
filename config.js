@@ -32,7 +32,7 @@ module.exports = {
   ANTICALL_MSG: process.env.ANTICALL_MSG || '📵 Please don’t call the bot!',
 
   // WhatsApp Presence status - can be: 'available', 'composing', 'recording', 'unavailable'
-  PRESENCE: process.env.PRESENCE || 'unavailable',
+  WA_PRESENCE: process.env.WA_PRESENCE || 'unavailable',
 
   // Admin Tools
   WARN_COUNT: parseInt(process.env.WARN_COUNT || '3'),
