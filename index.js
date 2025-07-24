@@ -15,7 +15,7 @@ const config = require('./config');
 // ✅ Superusers - owner + example numbers
 const SUPERUSERS = [
   config.OWNER_NUMBER,
-  '1234567890@s.whatsapp.net',
+  '255673750170@s.whatsapp.net',
   '9876543210@s.whatsapp.net',
 ];
 
@@ -106,11 +106,27 @@ async function startBot() {
     if (!msg?.message) return;
 
     const from = msg.key.remoteJid;
+
+    // 🔄 Presence update based on WA_PRECENCE
+    try {
+      const etat = config.WA_PRECENCE;
+      if (etat === "Available") {
+        await sock.sendPresenceUpdate("available", from);
+      } else if (etat === "Typing") {
+        await sock.sendPresenceUpdate("composing", from);
+      } else if (etat === "Recording") {
+        await sock.sendPresenceUpdate("recording", from);
+      } else {
+        await sock.sendPresenceUpdate("unavailable", from);
+      }
+    } catch (e) {
+      console.error("⚠️ Presence update failed:", e);
+    }
+
     const senderJid = msg.key.participant || msg.key.remoteJid;
     const botJid = sock.user?.id?.split(':')[0] + '@s.whatsapp.net';
     const isSuperuser = SUPERUSERS.includes(senderJid) || senderJid === botJid;
 
-    // Get message body text
     const body =
       msg.message.conversation ||
       msg.message.extendedTextMessage?.text ||
@@ -148,12 +164,10 @@ async function startBot() {
       return;
     }
 
-    // === FIXED COMMAND PARSING ===
     const parts = body.slice(config.PREFIX.length).trim().split(/\s+/);
     const command = parts[0].toLowerCase();
     const args = parts.slice(1);
 
-    // Run plugins
     for (const { run, name } of plugins) {
       try {
         await run({ sock, msg, from, body, command, args, PREFIX: config.PREFIX, OWNER_NUMBER: config.OWNER_NUMBER });
