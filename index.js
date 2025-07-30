@@ -1,193 +1,154 @@
 const {
   default: makeWASocket,
+  useSingleFileAuthState,
   DisconnectReason,
-  fetchLatestBaileysVersion,
-  useMultiFileAuthState,
-  makeCacheableSignalKeyStore
+  fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
-const { Boom } = require('@hapi/boom');
+const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
-const pino = require('pino');
 const http = require('http');
+const { Boom } = require('@hapi/boom');
+const { decode } = require('base64-arraybuffer');
 const config = require('./config');
 
-// ✅ Superusers - owner + example numbers
-const SUPERUSERS = [
-  config.OWNER_NUMBER,
-  '255673750170@s.whatsapp.net',
-  '9876543210@s.whatsapp.net',
-];
+// ————— Session decoding (base64) —————
+try {
+  const raw = config.SESSION_ID.split(';;;=>')[1];
+  const creds = Buffer.from(decode(raw));
+  fs.mkdirSync('auth', { recursive: true });
+  fs.writeFileSync('auth/creds.json', creds);
+} catch (e) {
+  console.error('❌ SESSION decode failed:', e);
+  process.exit(1);
+}
 
-// Auth folder for session
-const authFolder = path.join(__dirname, 'auth');
+const { state, saveState } = useSingleFileAuthState('auth/creds.json');
 
-// Decode SESSION_ID if present
-if (config.SESSION_ID) {
+// ————— Load plugins —————
+const PLUGIN_DIR = path.join(__dirname, 'The100Md_plugins');
+const plugins = fs.readdirSync(PLUGIN_DIR).filter(f => f.endsWith('.js')).map(file => {
   try {
-    const sessionData = config.SESSION_ID.replace(/^ALONE-MD;;;=>/, '');
-    const decoded = Buffer.from(sessionData, 'base64').toString('utf-8');
-    JSON.parse(decoded); // Validate JSON
-    fs.mkdirSync(authFolder, { recursive: true });
-    fs.writeFileSync(path.join(authFolder, 'creds.json'), decoded, 'utf-8');
-    console.log('✅ Session decoded and saved.');
+    const p = require(path.join(PLUGIN_DIR, file));
+    console.log(`✅ Plugin loaded: ${file}`);
+    return p;
   } catch (err) {
-    console.error('❌ SESSION_ID decode error:', err);
-    process.exit(1);
+    console.error(`❌ Plugin load error (${file})`, err);
+    return null;
   }
-}
+}).filter(Boolean);
 
-// Load plugins from folder
-const plugins = [];
-const pluginsDir = path.join(__dirname, 'The100Md_plugins');
-
-if (fs.existsSync(pluginsDir)) {
-  for (const file of fs.readdirSync(pluginsDir).filter(f => f.endsWith('.js'))) {
-    try {
-      const plugin = require(path.join(pluginsDir, file));
-      if (typeof plugin === 'function') {
-        plugins.push({ run: plugin, name: file });
-      } else if (plugin?.run && typeof plugin.run === 'function') {
-        plugins.push({ run: plugin.run, name: file });
-      } else {
-        console.warn(`⚠️ Invalid plugin format: ${file}`);
-      }
-      console.log(`✅ Loaded plugin: ${file}`);
-    } catch (err) {
-      console.error(`❌ Error loading plugin ${file}:`, err.message);
-    }
-  }
-} else {
-  console.warn(`⚠️ Plugins folder missing: ${pluginsDir}`);
-}
-
-// **Expose plugins globally for menu command**
-global.loadedPlugins = plugins;
-
-// Start the bot
 async function startBot() {
-  console.log('🟡 Starting bot...');
-  const { state, saveCreds } = await useMultiFileAuthState(authFolder);
   const { version } = await fetchLatestBaileysVersion();
-
   const sock = makeWASocket({
     version,
+    auth: state,
+    printQRInTerminal: true,
     logger: pino({ level: 'silent' }),
-    printQRInTerminal: !config.SESSION_ID,
-    auth: {
-      creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
-    },
-    browser: [config.BOT_NAME, 'Chrome', '1.0.0']
+    browser: [config.BOT_NAME, 'Chrome', '1.0.0'],
+    defaultQueryTimeoutMs: undefined
   });
 
-  sock.ev.on('creds.update', saveCreds);
-
-  // Add bot JID to superusers on connection open
-  sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
-    if (connection === 'close') {
-      const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
-      const reconnect = reason !== DisconnectReason.loggedOut;
-      console.log(`🔌 Disconnected (${reason}). ${reconnect ? 'Reconnecting...' : 'Logged out.'}`);
-      if (reconnect) setTimeout(startBot, 3000);
-    } else if (connection === 'open') {
-      const botJid = sock.user?.id?.split(':')[0] + '@s.whatsapp.net';
-      if (!SUPERUSERS.includes(botJid)) {
-        SUPERUSERS.push(botJid);
-        console.log('✅ Bot JID added to superusers:', botJid);
-      }
-      console.log(`✅ Bot connected as ${config.BOT_NAME}`);
-    }
-  });
-
-  // Message handler
+  // ——— Presence logic based on WA_PRESENCE setting ———
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
-    if (!msg?.message) return;
+    if (!msg?.message || msg.key.fromMe) return;
+    const jid = msg.key.remoteJid;
+
+    if (config.WA_PRESENCE && config.WA_PRESENCE !== 'unavailable') {
+      try {
+        await sock.sendPresenceUpdate(config.WA_PRESENCE, jid);
+      } catch (err) {
+        console.error('❌ Presence update failed:', err);
+      }
+    }
+  });
+
+  // ——— Auto‑view status updates ———
+  if (config.AUTO_STATUS_VIEW === true) {
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+      for (const m of messages) {
+        if (m.key.remoteJid?.startsWith('status@broadcast')) {
+          try {
+            await sock.readMessages([m.key]);
+          } catch (err) {
+            console.error('❌ Auto view status error', err);
+          }
+        }
+      }
+    });
+  }
+
+  // ——— Reconnection and session logic ———
+  sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
+    if (connection === 'close') {
+      const status = new Boom(lastDisconnect?.error)?.output?.statusCode;
+      const loggedOut = status === DisconnectReason.loggedOut;
+      console.log('🔌 Disconnected. reconnecting...', loggedOut ? '(logged out)' : '');
+      if (!loggedOut) startBot();
+    } else if (connection === 'open') {
+      console.log('✅ Bot is up and running!');
+    }
+  });
+  sock.ev.on('creds.update', saveState);
+
+  // ——— Core message command handler ———
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg?.message || msg.key.fromMe) return;
 
     const from = msg.key.remoteJid;
+    const sender = msg.key.participant || from;
+    const text = msg.message.conversation ||
+      msg.message.extendedTextMessage?.text || '';
+    const raw = text.trim().split(/\s+/);
+    const command = raw[0]?.startsWith(config.PREFIX)
+      ? raw[0].slice(config.PREFIX.length).toLowerCase()
+      : null;
+    if (!command) return;
 
-    // 🔄 Presence update based on WA_PRECENCE
+    // — Channel admin-only restriction ——
+    if (from.endsWith('@newsletter')) {
+      const admins = Array.isArray(config.OWNER_NUMBER)
+        ? config.OWNER_NUMBER
+        : [config.OWNER_NUMBER];
+      const userId = sender.split('@')[0];
+      if (!admins.includes(userId)) {
+        await sock.sendMessage(from, {
+          text: '🚫 Sorry! Only channel admins can run commands here.',
+          quoted: msg
+        });
+        return;
+      }
+    }
+
+    // — Execute plugin command ——
+    const plug = plugins.find(p => p.pattern?.toLowerCase() === command);
+    if (!plug) {
+      await sock.sendMessage(from, {
+        text: `❓ Unknown command "${command}". Send ${config.PREFIX}menu to see commands.`,
+        quoted: msg
+      });
+      return;
+    }
+
     try {
-      const etat = config.WA_PRECENCE;
-      if (etat === "Available") {
-        await sock.sendPresenceUpdate("available", from);
-      } else if (etat === "Typing") {
-        await sock.sendPresenceUpdate("composing", from);
-      } else if (etat === "Recording") {
-        await sock.sendPresenceUpdate("recording", from);
-      } else {
-        await sock.sendPresenceUpdate("unavailable", from);
-      }
-    } catch (e) {
-      console.error("⚠️ Presence update failed:", e);
-    }
-
-    const senderJid = msg.key.participant || msg.key.remoteJid;
-    const botJid = sock.user?.id?.split(':')[0] + '@s.whatsapp.net';
-    const isSuperuser = SUPERUSERS.includes(senderJid) || senderJid === botJid;
-
-    const body =
-      msg.message.conversation ||
-      msg.message.extendedTextMessage?.text ||
-      msg.message.imageMessage?.caption ||
-      msg.message.videoMessage?.caption ||
-      msg.message.buttonsResponseMessage?.selectedButtonId || '';
-
-    // Auto view status if enabled
-    if (config.AUTO_STATUS_VIEW && from === 'status@broadcast') {
-      try {
-        await sock.readMessages([msg.key]);
-        console.log('👀 Auto-viewed status:', msg.pushName || senderJid);
-      } catch (e) {
-        console.error('⚠️ Status view error:', e);
-      }
-      return;
-    }
-
-    // Auto reply if enabled
-    if (config.AUTO_REPLY) {
-      try {
-        await sock.sendMessage(from, { text: config.AUTO_REPLY_MSG }, { quoted: msg });
-        console.log('💬 Auto replied to', msg.pushName || from);
-      } catch (e) {
-        console.error('⚠️ Auto-reply failed:', e);
-      }
-    }
-
-    // Ignore if not command
-    if (!body.startsWith(config.PREFIX)) return;
-
-    // Block command if private mode and not superuser
-    if (!config.PUBLIC_MODE && !isSuperuser) {
-      console.log(`⛔ Command blocked from ${senderJid} (private mode)`);
-      return;
-    }
-
-    const parts = body.slice(config.PREFIX.length).trim().split(/\s+/);
-    const command = parts[0].toLowerCase();
-    const args = parts.slice(1);
-
-    for (const { run, name } of plugins) {
-      try {
-        await run({ sock, msg, from, body, command, args, PREFIX: config.PREFIX, OWNER_NUMBER: config.OWNER_NUMBER });
-        console.log(`📦 Executed: ${name} → ${command}`);
-      } catch (err) {
-        console.error(`⚠️ Plugin error (${name}):`, err);
-      }
+      await plug.run({ sock, msg, from, command, config, coms: plugins });
+      console.log(`📦 Executed: ${command}`);
+    } catch (err) {
+      console.error('💥 Plugin error', err);
+      await sock.sendMessage(from, {
+        text: '⚠️ Error executing command, try again later.',
+        quoted: msg
+      });
     }
   });
 }
 
-// Launch bot
-startBot().catch((err) => {
-  console.error('❌ Fatal error during bot startup:', err);
-});
-
-// Dummy HTTP server to keep bot alive
+// Keep alive server for uptime
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('🤖 The100-Bug-MD bot is alive.\n');
-}).listen(process.env.PORT || 3000, () => {
-  console.log('🌐 HTTP server running to keep dyno alive');
-});
+  res.end('🔥 100BUG‑MD is alive.');
+}).listen(process.env.PORT || 8080, () => console.log('🌍 Server running'));
+
+startBot().catch(err => console.error('❌ Bot failed to start:', err));
